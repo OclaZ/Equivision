@@ -1,0 +1,19 @@
+{
+    "name": "equivision-monorepo",
+    "version": "1.0.0",
+    "private": true,
+    "scripts": {
+        "setup": "npm install && cd frontend && npm install && cd ../backend && python -m venv venv && .\\venv\\Scripts\\activate && pip install -r requirements.txt",
+        "dev:frontend": "cd frontend && npm run dev",
+        "dev:backend": "cd backend && .\\venv\\Scripts\\python -m uvicorn main:app --reload",
+        "lint:frontend": "cd frontend && npm run lint",
+        "lint:backend": "cd backend && .\\venv\\Scripts\\flake8 . && .\\venv\\Scripts\\black . --check",
+        "format:backend": "cd backend && .\\venv\\Scripts\\black . && .\\venv\\Scripts\\isort .",
+        "test:backend": "cd backend && .\\venv\\Scripts\\pytest",
+        "test:frontend": "cd frontend && npm run test",
+        "test": "npm run test:backend && npm run test:frontend"
+    },
+    "devDependencies": {
+        "concurrently": "^8.2.0"
+    }
+}
