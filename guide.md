@@ -120,7 +120,9 @@ equivision/
 ├── notebooks/               # Jupyter notebooks for exploration
 ├── docker-compose.yml       # Orchestration
 └── README.md
-6. 🛡️ Quality Guidelines
+```
+
+## 6. 🛡️ Quality Guidelines
 Mobile Responsiveness: All frontend components must work on <768px.
 
 Error Handling: Backend APIs must return standard HTTP errors (400, 401, 404, 500) with detailed messages.
@@ -129,9 +131,12 @@ Typing: No any in TypeScript. Full Type Hints in Python.
 
 Documentation: Add docstrings to all Python functions and JSDoc to complex React hooks.
 
-7. 🤖 MCP Toolchain Reference
+## 7. 🤖 MCP Toolchain Reference
 Use jira to get ticket details: get_issue('EQUI-1-1').
 
 Use filesystem to create files: write_file(path, content).
 
 Use git to save work: git_commit, git_push.
+
+## 8. 🧠 Agent Context Strategy
+* **Frontend Coding:** ALWAYS use `context 7 mcp` when writing or refactoring frontend code to ensure access to the latest design tokens and component usage patterns.
