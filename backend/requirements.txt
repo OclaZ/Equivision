@@ -8,3 +8,6 @@ black
 flake8
 isort
 kaggle
+scrapy
+psycopg2-binary
+sqlalchemy
