@@ -6,10 +6,24 @@ class AvitoSpider(scrapy.Spider):
     name = "avito"
     allowed_domains = ["avito.ma"]
     start_urls = ["https://www.avito.ma/fr/maroc/animaux/chevaux"]
+    
+    # Configuration
+    custom_settings = {
+        'DOWNLOAD_DELAY': 2,  # Be respectful to the server
+        'CONCURRENT_REQUESTS_PER_DOMAIN': 1,
+        'USER_AGENT': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    }
+    
+    def __init__(self, max_pages=5, *args, **kwargs):
+        super(AvitoSpider, self).__init__(*args, **kwargs)
+        self.max_pages = int(max_pages)
+        self.pages_crawled = 0
 
     def parse(self, response) -> Generator[Dict[str, Any], None, None]:
+        self.pages_crawled += 1
+        self.logger.info(f"Parsing page {self.pages_crawled}/{self.max_pages}")
+        
         # Iterate over listings
-        # Using the selectors validated in parse_avito.py
         for node in response.css('a.sc-1jge648-0.jZXrfL'):
             item = {}
             item['url'] = node.css('::attr(href)').get()
@@ -29,11 +43,12 @@ class AvitoSpider(scrapy.Spider):
             if item['url']:
                 yield item
         
-        # Pagination
-        # Need to identify the "Next" button.
-        # This might require inspecting the sample html for pagination links.
-        # In the absence of a visible pagination in sample, we'll assume a localized text or class.
-        # I'll look for a link with rel="next" or similar generic pattern.
-        next_page = response.css('a[rel="next"]::attr(href)').get()
-        if next_page:
-            yield response.follow(next_page, self.parse)
+        # Pagination with limit
+        if self.pages_crawled < self.max_pages:
+            next_page = response.css('a[rel="next"]::attr(href)').get()
+            if next_page:
+                yield response.follow(next_page, self.parse)
+            else:
+                self.logger.info("No more pages found")
+        else:
+            self.logger.info(f"Reached max pages limit: {self.max_pages}")

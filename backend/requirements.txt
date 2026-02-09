@@ -11,3 +11,7 @@ kaggle
 scrapy
 psycopg2-binary
 sqlalchemy
+python-multipart
+python-jose[cryptography]
+passlib[bcrypt]
+requests
