@@ -21,17 +21,26 @@ pricing_service = None
 async def lifespan(app: FastAPI):
     # Startup: Initialize Database and Load ML Models
     global breed_service, pricing_service
+    
+    # Try to initialize database (optional)
     try:
         logger.info("Initializing Database...")
         init_db()
         logger.info("Database initialized successfully")
-        
+    except Exception as e:
+        logger.warning(f"Database initialization failed (continuing without DB): {e}")
+    
+    # Initialize ML Services (critical)
+    try:
         logger.info("Initializing ML Services...")
         breed_service = BreedClassifierService()
         pricing_service = PricingService()
         logger.info("All ML Services initialized successfully")
     except Exception as e:
-        logger.error(f"Failed to initialize services: {e}")
+        logger.error(f"Failed to initialize ML Services: {e}")
+        import traceback
+        traceback.print_exc()
+    
     yield
     # Shutdown: Clean up checks if needed
     logger.info("Shutting down...")
