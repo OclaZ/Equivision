@@ -18,7 +18,8 @@ class HorseBreedClassifier(nn.Module):
         return self.model(x)
 
 def load_model(model_path, num_classes, device):
-    model = HorseBreedClassifier(num_classes=num_classes)
+    # Don't download pretrained weights if we are loading custom weights
+    model = HorseBreedClassifier(num_classes=num_classes, pretrained=False)
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.to(device)
     model.eval()

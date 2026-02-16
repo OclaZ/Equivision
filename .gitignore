@@ -3,3 +3,14 @@ plan/
 venv/
 node_modules/
 node_modules
+ANTIGRAVITY_WORKFLOW.md
+.env
+.env.local
+__pycache__/
+*.log
+.DS_Store
+*.pth
+backend/app/ml/vision/weights/
+.pytest_cache/
+.vscode/
+*.pyc

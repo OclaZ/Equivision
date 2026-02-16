@@ -1,14 +1,18 @@
 
+
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 from typing import Optional
 import logging
+import os
 
+# Commented out due to Windows numpy DLL issue
 from app.ml.vision.inference import BreedClassifierService
-from app.ml.pricing.inference import PricingService
-from app.core.database import init_db
-from app.api.auth import router as auth_router
+try:
+    from app.ml.pricing.inference import PricingService
+except ImportError:
+    PricingService = None # Will crash later if used, but handled by ML_MODE check
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO)
@@ -19,23 +23,51 @@ pricing_service = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Initialize Database and Load ML Models
+    # Determine mode
+    ml_mode = os.getenv("ML_MODE", "FULL")
+    
+    # Startup: Initialize Database (only in FULL mode)
     global breed_service, pricing_service
     
-    # Try to initialize database (optional)
-    try:
-        logger.info("Initializing Database...")
-        init_db()
-        logger.info("Database initialized successfully")
-    except Exception as e:
-        logger.warning(f"Database initialization failed (continuing without DB): {e}")
+    if ml_mode == "FULL":
+        # Try to initialize database (optional)
+        try:
+            from app.core.database import init_db
+            logger.info("Initializing Database...")
+            init_db()
+            logger.info("Database initialized successfully")
+        except Exception as e:
+            logger.warning(f"Database initialization failed (continuing without DB): {e}")
+    else:
+        logger.info(f"Skipping Database initialization in {ml_mode} mode")
     
-    # Initialize ML Services (critical)
+
+    # Initialize ML Services
     try:
-        logger.info("Initializing ML Services...")
-        breed_service = BreedClassifierService()
-        pricing_service = PricingService()
-        logger.info("All ML Services initialized successfully")
+        ml_mode = os.getenv("ML_MODE", "FULL")
+        logger.info(f"Initializing ML Services (Mode: {ml_mode})...")
+        
+        # 1. Vision Service (Breed Classifier)
+        if ml_mode in ["FULL", "VISION_ONLY"]:
+            # Breed Classifier with auto-proxy logic
+            breed_service = BreedClassifierService()
+            logger.info("Breed Classifier service initialized (Local/Remote)")
+        else:
+            breed_service = None
+
+        # 2. Pricing Service
+        if ml_mode in ["FULL", "PRICING_ONLY"]:
+            try:
+                pricing_service = PricingService()
+                logger.info("Pricing Service loaded successfully") 
+            except Exception as e:
+                logger.warning(f"Pricing Service failed to load: {e}")
+                pricing_service = None
+        else:
+             pricing_service = None
+             
+        logger.info("ML Services initialization complete")
+        
     except Exception as e:
         logger.error(f"Failed to initialize ML Services: {e}")
         import traceback
@@ -47,14 +79,18 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="EquiVision API", lifespan=lifespan)
 
-# Include routers
-app.include_router(auth_router)
-
 # Request models
 class PriceEstimateRequest(BaseModel):
     breed: Optional[str] = None
     gender: Optional[str] = None
     age: Optional[int] = None
+
+# Include routers conditionally
+ml_mode = os.getenv("ML_MODE", "FULL")
+if ml_mode == "FULL":
+    from app.api.auth import router as auth_router
+    app.include_router(auth_router)
+
 
 @app.get("/")
 def read_root():

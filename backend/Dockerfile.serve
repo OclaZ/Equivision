@@ -1,0 +1,25 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install torch CPU version (smaller image)
+RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+# Install other dependencies
+RUN pip install fastapi uvicorn pillow python-multipart requests python-dotenv pydantic typing-extensions
+RUN pip install sqlalchemy psycopg2-binary
+
+# Copy app code (we will mount volume for live reload, but this is backup)
+COPY . /app
+
+# Expose port
+EXPOSE 8000
+
+# Command to run the server
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -6,7 +6,7 @@ import os
 # Database URL from environment or default
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://postgres:equivision123@localhost:5432/equivision_db"
+    "postgresql://postgres:equivision123@localhost:5433/equivision_db"
 )
 
 # Create engine

@@ -35,11 +35,13 @@ class HorseBreedsDataset(Dataset):
         
         # Gather images
         # Filenames are like '01_001.png', where '01' is the breed ID
-        for file_path in self.root_dir.glob("*.png"):
-            breed_id = file_path.name.split('_')[0]
-            if breed_id in self.id_to_name:
-                breed_name = self.id_to_name[breed_id]
-                self.samples.append((str(file_path), self.class_to_idx[breed_name]))
+        extensions = ['*.png', '*.jpg', '*.jpeg', '*.webp', '*.JPG', '*.JPEG']
+        for ext in extensions:
+            for file_path in self.root_dir.glob(ext):
+                breed_id = file_path.name.split('_')[0]
+                if breed_id in self.id_to_name:
+                    breed_name = self.id_to_name[breed_id]
+                    self.samples.append((str(file_path), self.class_to_idx[breed_name]))
                 
     def __len__(self):
         return len(self.samples)

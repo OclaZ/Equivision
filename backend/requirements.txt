@@ -13,5 +13,11 @@ psycopg2-binary
 sqlalchemy
 python-multipart
 python-jose[cryptography]
-passlib[bcrypt]
+passlib
+bcrypt==3.2.0
 requests
+torch
+torchvision
+pillow
+numpy
+scikit-learn

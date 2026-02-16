@@ -11,7 +11,7 @@ from pathlib import Path
 from dataset import HorseBreedsDataset, get_transforms
 from model import HorseBreedClassifier
 
-def train_model(data_dir, output_dir, num_epochs=25, batch_size=32, learning_rate=0.001):
+def train_model(data_dir, output_dir, num_epochs=25, batch_size=32, learning_rate=0.001, num_workers=4):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
     
@@ -28,9 +28,6 @@ def train_model(data_dir, output_dir, num_epochs=25, batch_size=32, learning_rat
     
     # Reset transform for validation to be deterministic
     val_dataset.dataset.transform = get_transforms(is_training=False) 
-    # Note: random_split wraps the dataset, so we might need to handle transforms carefully if we want different ones.
-    # Actually, random_split shares the underlying dataset. 
-    # To have different transforms, it's better to create two dataset instances with different transforms.
     
     # Proper split with transforms
     train_full_ds = HorseBreedsDataset(data_dir, transform=get_transforms(is_training=True))
@@ -45,8 +42,8 @@ def train_model(data_dir, output_dir, num_epochs=25, batch_size=32, learning_rat
     val_dataset = torch.utils.data.Subset(val_full_ds, val_indices)
     
     dataloaders = {
-        'train': DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4),
-        'val': DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
+        'train': DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers),
+        'val': DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
     }
     dataset_sizes = {'train': len(train_dataset), 'val': len(val_dataset)}
     
@@ -66,7 +63,7 @@ def train_model(data_dir, output_dir, num_epochs=25, batch_size=32, learning_rat
     output_path.mkdir(parents=True, exist_ok=True)
     
     for epoch in range(num_epochs):
-        print(f'Epoch {epoch}/{num_epochs - 1}')
+        print(f'Epoch {epoch+1}/{num_epochs}')
         print('-' * 10)
 
         for phase in ['train', 'val']:
@@ -78,6 +75,7 @@ def train_model(data_dir, output_dir, num_epochs=25, batch_size=32, learning_rat
             running_loss = 0.0
             running_corrects = 0
 
+            # Iterate over data.
             for inputs, labels in dataloaders[phase]:
                 inputs = inputs.to(device)
                 labels = labels.to(device)
@@ -119,12 +117,37 @@ def train_model(data_dir, output_dir, num_epochs=25, batch_size=32, learning_rat
     model.load_state_dict(best_model_wts)
     return model
 
+import argparse
+
 if __name__ == "__main__":
-    DATA_DIR = "d:/EquiVision/backend/data/raw/horse-breeds"
-    OUTPUT_DIR = "d:/EquiVision/backend/app/ml/vision/weights"
+    parser = argparse.ArgumentParser(description='Train Vision Model')
+    parser.add_argument('--data_dir', type=str, default="data/raw/horse-breeds", help='Path to dataset directory')
+    parser.add_argument('--output_dir', type=str, default="app/ml/vision/weights", help='Path to save weights')
+    parser.add_argument('--epochs', type=int, default=25, help='Number of epochs to train')
+    parser.add_argument('--batch_size', type=int, default=32, help='Batch size for training')
+    parser.add_argument('--workers', type=int, default=4, help='Number of worker threads (0 for Windows)')
+
+    args = parser.parse_args()
+
+    # Ensure output directory exists
+    os.makedirs(args.output_dir, exist_ok=True)
     
     # Check if data exists
-    if not os.path.exists(DATA_DIR):
-        print(f"Data directory {DATA_DIR} not found due to previous steps not being fully automated or validated yet.")
+    if not os.path.exists(args.data_dir):
+        print(f"Data directory '{args.data_dir}' not found. Please provide the correct path via --data_dir")
     else:
-        train_model(DATA_DIR, OUTPUT_DIR, num_epochs=10)
+        print(f"Starting training on device: {torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')}")
+        print(f"Data Source: {args.data_dir}")
+        print(f"Output Dir: {args.output_dir}")
+        
+        # We need to slightly modify train_model to accept num_workers argument or use the global arg
+        # For simplicity, we'll just reinject the train_model call but passing args if we modify the function signature next
+        # Instead of modifying the function signature (which would require another edit), let's hack the num_workers in dataloaders inside train_model
+        # But wait, train_model hardcodes num_workers=0 or 4. Let's fix that.
+        
+        # Actually, let's just update train_model to accept num_workers.
+        # Since I can't edit two places at once with replace_file_content easily without context issues, 
+        # I will just call it as before but I'll need to update the function definition in a separate step if I want to pass workers.
+        # For now, let's just run it. The user can edit the file on the other PC if needed, but 4 is a good default for a "friend's PC" which likely has a GPU/Linux.
+        
+        train_model(args.data_dir, args.output_dir, num_epochs=args.epochs, batch_size=args.batch_size, num_workers=args.workers)
