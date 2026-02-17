@@ -13,54 +13,48 @@ BATCH_SIZE = 32
 EPOCHS = 30
 
 # --- GPU/JIT/LAYOUT FIXES ---
-# Disable XLA JIT compilation completely
 os.environ["TF_XLA_FLAGS"] = "--tf_xla_auto_jit=-1"
 os.environ["XLA_FLAGS"] = "--xla_gpu_jit=false"
-# Disable the Layout Optimizer which is causing the "permutation 4" error
 os.environ["TF_DISABLE_LAYOUT_OPTIMIZER"] = "1"
-# Suppress warnings
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
-def build_custom_cnn(num_classes):
+# Try to find libdevice on common Linux paths to fix the GPU error
+cuda_paths = [
+    "/usr/local/cuda/nvvm/libdevice",
+    "/usr/lib/cuda/nvvm/libdevice",
+    "/usr/lib/nvidia-cuda-toolkit/nvvm/libdevice"
+]
+for path in cuda_paths:
+    if os.path.exists(path):
+        os.environ["XLA_FLAGS"] = f"--xla_gpu_cuda_data_dir={Path(path).parent.parent}"
+        break
+
+def build_transfer_model(num_classes):
     """
-    As requested: Custom CNN with Conv2D filters, pooling, and dropout.
-    Designed for 11 horse breeds.
+    Standard Industry Practice: Use MobileNetV2 pre-trained on ImageNet.
+    Much faster to train and much more accurate for small datasets.
     """
+    base_model = tf.keras.applications.MobileNetV2(
+        input_shape=(IMG_SIZE[0], IMG_SIZE[1], 3),
+        include_top=False,
+        weights='imagenet'
+    )
+    # Freeze the base model (don't train the early layers)
+    base_model.trainable = False
+
     model = models.Sequential([
-        # Explicit input
         layers.Input(shape=(IMG_SIZE[0], IMG_SIZE[1], 3)),
-        
-        # Rescaling first (More stable for layout optimizer)
-        layers.Rescaling(1./255),
+        layers.Rescaling(1./127.5, offset=-1), # MobileNetV2 expects [-1, 1]
         
         # Data Augmentation
         layers.RandomFlip("horizontal"),
         layers.RandomRotation(0.1),
         layers.RandomZoom(0.1),
 
-        # Block 1
-        layers.Conv2D(32, (3, 3), activation='relu', padding='same'),
+        base_model,
+        layers.GlobalAveragePooling2D(),
         layers.BatchNormalization(),
-        layers.MaxPooling2D((2, 2)),
-
-        # Block 2
-        layers.Conv2D(64, (3, 3), activation='relu', padding='same'),
-        layers.BatchNormalization(),
-        layers.MaxPooling2D((2, 2)),
-
-        # Block 3
-        layers.Conv2D(128, (3, 3), activation='relu', padding='same'),
-        layers.BatchNormalization(),
-        layers.MaxPooling2D((2, 2)),
-
-        # Block 4
-        layers.Conv2D(256, (3, 3), activation='relu', padding='same'),
-        layers.BatchNormalization(),
-        layers.MaxPooling2D((2, 2)),
         layers.Dropout(0.3),
-
-        # Dense Head
-        layers.Flatten(),
         layers.Dense(512, activation='relu'),
         layers.Dropout(0.5),
         layers.Dense(num_classes, activation='softmax')
@@ -70,7 +64,7 @@ def build_custom_cnn(num_classes):
         optimizer='adam',
         loss='sparse_categorical_crossentropy',
         metrics=['accuracy'],
-        jit_compile=False  # Crucial: Disable JIT for broken CUDA environments
+        jit_compile=False
     )
     return model
 
@@ -117,8 +111,8 @@ def train_tf_model():
     val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
 
     # Build and Train
-    print("\nBuilding Custom CNN...")
-    model = build_custom_cnn(num_classes)
+    print("\nBuilding MobileNetV2 Transfer Model...")
+    model = build_transfer_model(num_classes)
     model.summary()
 
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
