@@ -27,3 +27,4 @@ nvidia-cuda-cupti-cu12
 nvidia-cudnn-cu12
 nvidia-cublas-cu12
 nvidia-cuda-nvcc-cu12
+ultralytics
