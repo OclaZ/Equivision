@@ -12,14 +12,23 @@ IMG_SIZE = (224, 224)
 BATCH_SIZE = 32
 EPOCHS = 30
 
+# --- GPU/JIT FIXES ---
+# Disable XLA JIT compilation which is currently failing on some Linux GPU setups
+os.environ["TF_XLA_FLAGS"] = "--tf_xla_auto_jit=-1"
+# Suppress some layout optimizer warnings
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+
 def build_custom_cnn(num_classes):
     """
     As requested: Custom CNN with Conv2D filters, pooling, and dropout.
     Designed for 11 horse breeds.
     """
     model = models.Sequential([
-        # Data Augmentation (built into the model for portability)
-        layers.RandomFlip("horizontal", input_shape=(IMG_SIZE[0], IMG_SIZE[1], 3)),
+        # Use explicit Input layer to avoid warnings and layout errors
+        layers.Input(shape=(IMG_SIZE[0], IMG_SIZE[1], 3)),
+        
+        # Data Augmentation (restayed inside for portability)
+        layers.RandomFlip("horizontal"),
         layers.RandomRotation(0.1),
         layers.RandomZoom(0.1),
         layers.Rescaling(1./255),
