@@ -18,15 +18,22 @@ os.environ["XLA_FLAGS"] = "--xla_gpu_jit=false"
 os.environ["TF_DISABLE_LAYOUT_OPTIMIZER"] = "1"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
-# Try to find libdevice on common Linux paths to fix the GPU error
-cuda_paths = [
+# Try to find libdevice on common Linux paths and inside the VENV packages
+import site
+paths_to_check = [
     "/usr/local/cuda/nvvm/libdevice",
     "/usr/lib/cuda/nvvm/libdevice",
     "/usr/lib/nvidia-cuda-toolkit/nvvm/libdevice"
 ]
-for path in cuda_paths:
+
+# Add VENV paths
+for s in site.getsitepackages() + [site.getusersitepackages()]:
+    paths_to_check.append(os.path.join(s, "nvidia/cuda_nvcc/nvvm/libdevice"))
+
+for path in paths_to_check:
     if os.path.exists(path):
         os.environ["XLA_FLAGS"] = f"--xla_gpu_cuda_data_dir={Path(path).parent.parent}"
+        print(f"✅ Found CUDA libdevice at: {path}")
         break
 
 def build_transfer_model(num_classes):
