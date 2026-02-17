@@ -21,3 +21,4 @@ torchvision
 pillow
 numpy
 scikit-learn
+tensorflow
