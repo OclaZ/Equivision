@@ -119,7 +119,12 @@ def clean_vision_data():
                 breed_dir.mkdir(exist_ok=True)
 
                 # 6. Save the (possibly cropped) image
+                if crop_img.mode in ("RGBA", "P"):
+                    crop_img = crop_img.convert("RGB")
+                    
                 target_path = breed_dir / img_path.name
+                # Ensure extension is .jpg
+                target_path = target_path.with_suffix(".jpg")
                 crop_img.save(target_path, "JPEG", quality=95)
                 counts["kept"] += 1
 
