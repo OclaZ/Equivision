@@ -12,10 +12,13 @@ IMG_SIZE = (224, 224)
 BATCH_SIZE = 32
 EPOCHS = 30
 
-# --- GPU/JIT FIXES ---
-# Disable XLA JIT compilation which is currently failing on some Linux GPU setups
+# --- GPU/JIT/LAYOUT FIXES ---
+# Disable XLA JIT compilation completely
 os.environ["TF_XLA_FLAGS"] = "--tf_xla_auto_jit=-1"
-# Suppress some layout optimizer warnings
+os.environ["XLA_FLAGS"] = "--xla_gpu_jit=false"
+# Disable the Layout Optimizer which is causing the "permutation 4" error
+os.environ["TF_DISABLE_LAYOUT_OPTIMIZER"] = "1"
+# Suppress warnings
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
 def build_custom_cnn(num_classes):
@@ -24,14 +27,16 @@ def build_custom_cnn(num_classes):
     Designed for 11 horse breeds.
     """
     model = models.Sequential([
-        # Use explicit Input layer to avoid warnings and layout errors
+        # Explicit input
         layers.Input(shape=(IMG_SIZE[0], IMG_SIZE[1], 3)),
         
-        # Data Augmentation (restayed inside for portability)
+        # Rescaling first (More stable for layout optimizer)
+        layers.Rescaling(1./255),
+        
+        # Data Augmentation
         layers.RandomFlip("horizontal"),
         layers.RandomRotation(0.1),
         layers.RandomZoom(0.1),
-        layers.Rescaling(1./255),
 
         # Block 1
         layers.Conv2D(32, (3, 3), activation='relu', padding='same'),
@@ -64,7 +69,8 @@ def build_custom_cnn(num_classes):
     model.compile(
         optimizer='adam',
         loss='sparse_categorical_crossentropy',
-        metrics=['accuracy']
+        metrics=['accuracy'],
+        jit_compile=False  # Crucial: Disable JIT for broken CUDA environments
     )
     return model
 
