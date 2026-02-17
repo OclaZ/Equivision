@@ -75,7 +75,18 @@ class BreedClassifierService:
             # 1. Paths
             base_path = Path(__file__).resolve().parent
             weights_pth = base_path / "weights/best_model.pth"
-            weights_tf = base_path / "weights_tf/horse_vision_tf.h5"
+            
+            # Check for multiple TF model names
+            tf_model_candidates = [
+                base_path / "weights_tf/horse_vision_tf.h5",
+                base_path / "weights_tf/horse_vision_tf_final.h5",
+                base_path / "weights_tf/model.h5"
+            ]
+            weights_tf = None
+            for p in tf_model_candidates:
+                if p.exists():
+                    weights_tf = p
+                    break
             
             # Find labels
             labels_path = None
@@ -100,11 +111,19 @@ class BreedClassifierService:
                     logger.info(f"Loaded {len(self.class_names)} classes from {labels_path}")
 
             # 2. Try loading TensorFlow model first (since it's the new request)
-            if tf and weights_tf.exists():
-                self.model = tf.keras.models.load_model(str(weights_tf))
-                self.model_type = 'tf'
-                logger.info(f"TensorFlow Model loaded from {weights_tf}")
-                return # Success
+            if tf:
+                if weights_tf:
+                    try:
+                        self.model = tf.keras.models.load_model(str(weights_tf))
+                        self.model_type = 'tf'
+                        logger.info(f"TensorFlow Model loaded from {weights_tf}")
+                        return # Success
+                    except Exception as e:
+                         logger.error(f"Failed to load existing TF model: {e}")
+                else:
+                    logger.warning(f"TensorFlow is available but model file not found in {base_path}/weights_tf/")
+
+            # 3. Fallback to PyTorch
 
             # 3. Fallback to PyTorch
             if torch and load_model and weights_pth.exists() and len(self.class_names) > 0:
@@ -170,8 +189,12 @@ class BreedClassifierService:
                         "cropped": True
                     }
                 else:
-                    logger.warning("No horse detected by YOLO. Proceeding with full image.")
-                    detection_info = {"object_detected": None, "cropped": False}
+                    return {
+                        "error": "No horse detected in the image.",
+                        "breed": "Unknown",
+                        "confidence": 0.0,
+                        "detection": {"object_detected": None}
+                    }
 
             # 2. Stage 2: Breed Classification
             if self.model_type == 'torch':
@@ -213,6 +236,46 @@ class BreedClassifierService:
         except Exception as e:
             logger.error(f"Local Prediction failed: {e}. Trying remote fallback...")
             return self._predict_remote(image_file)
+
+    def visualize_prediction(self, image_file):
+        """
+        Returns the image with bounding box and prediction label drawn.
+        """
+        import cv2
+        import numpy as np
+        
+        # Load image for CV2
+        file_bytes = np.frombuffer(image_file.read(), np.uint8)
+        img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        
+        # Reset file pointer for standard prediction
+        image_file.seek(0)
+        
+        # Get Prediction
+        result = self.predict(image_file)
+        
+        if "error" in result:
+             # Draw "No Horse Found" on image
+             cv2.putText(img, "NO HORSE DETECTED", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        else:
+            # Draw Bounding Box
+            bbox = result["detection"]["bbox"]
+            label = f"{result['breed']} ({result['confidence']*100:.1f}%)"
+            x1, y1, x2, y2 = map(int, bbox)
+            
+            # Draw Rectangle
+            cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            
+            # Draw Label Background
+            (w, h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
+            cv2.rectangle(img, (x1, y1 - 30), (x1 + w, y1), (0, 255, 0), -1)
+            
+            # Draw Text
+            cv2.putText(img, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 2)
+
+        # Convert back to bytes
+        _, img_encoded = cv2.imencode('.jpg', img)
+        return io.BytesIO(img_encoded.tobytes())
 
     def _predict_remote(self, image_file):
         """Forward prediction request to Docker container running on port 8001"""

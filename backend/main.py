@@ -118,6 +118,25 @@ async def predict_breed(file: UploadFile = File(...)):
         logger.error(f"Prediction error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+from fastapi.responses import StreamingResponse
+
+@app.post("/predict/breed/visualize")
+async def visualize_breed(file: UploadFile = File(...)):
+    if not breed_service:
+        raise HTTPException(status_code=503, detail="Breed Classification Service not available")
+    
+    if not file.content_type or not file.content_type.startswith("image/"):
+        if not file.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
+            raise HTTPException(status_code=400, detail="File must be an image")
+
+    try:
+        # Get processed image stream
+        img_stream = breed_service.visualize_prediction(file.file)
+        return StreamingResponse(img_stream, media_type="image/jpeg")
+    except Exception as e:
+        logger.error(f"Visualization error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/predict/price")
 async def predict_price(request: PriceEstimateRequest):
     if not pricing_service:

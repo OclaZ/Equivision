@@ -144,11 +144,31 @@ def train_tf_model():
         )
     ]
 
+    # Calculate Class Weights to handle imbalance
+    from sklearn.utils import class_weight
+    import numpy as np
+
+    print("Calculating class weights...")
+    # Iterate through dataset to get all labels (safe for <2000 images)
+    y_train = []
+    for images, labels in train_ds:
+        y_train.extend(labels.numpy())
+    
+    unique_classes = np.unique(y_train)
+    class_weights = class_weight.compute_class_weight(
+        class_weight='balanced',
+        classes=unique_classes,
+        y=np.array(y_train)
+    )
+    class_weights_dict = dict(zip(unique_classes, class_weights))
+    print(f"Class Weights: {class_weights_dict}")
+
     print("\nStarting TensorFlow Training...")
     history = model.fit(
         train_ds,
         validation_data=val_ds,
         epochs=EPOCHS,
+        class_weight=class_weights_dict,
         callbacks=callbacks
     )
 
