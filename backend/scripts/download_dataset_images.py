@@ -14,8 +14,8 @@ logger = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_FILE = BASE_DIR / "data/processed/unified_horse_data.csv"
 OUTPUT_DIR = BASE_DIR / "data/raw/horse-breeds-scraped"
-MAX_WORKERS = 10
-TIMEOUT = 10
+MAX_WORKERS = 5
+TIMEOUT = 30
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
@@ -57,8 +57,9 @@ def download_image(row):
             return "failed"
             
     except Exception as e:
-        # logger.warning(f"Failed to download {url}: {e}")
-        return "error"
+        with open("download_failures.log", "a") as log:
+            log.write(f"{url}: {str(e)}\n")
+        return "failed"
 
 def main():
     if not DATA_FILE.exists():
