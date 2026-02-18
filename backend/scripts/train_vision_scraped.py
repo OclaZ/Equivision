@@ -180,7 +180,7 @@ def train():
     # Cosine decay from 1e-4 → 1e-7 over remaining epochs
     cosine_schedule = tf.keras.optimizers.schedules.CosineDecay(
         initial_learning_rate=1e-4,
-        decay_steps=40 * len(train_ds),  # steps = epochs * batches
+        decay_steps=40 * (2889 // BATCH_SIZE),  # ~90 steps/epoch * 40 epochs
         alpha=1e-7
     )
 
