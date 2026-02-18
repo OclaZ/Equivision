@@ -138,16 +138,35 @@ def process_scraped_images():
                 # print(f"Corrupt image {img_path.name}: {e}")
                 counts["removed_corrupt"] += 1
 
-    print("\n" + "="*40)
-    print("   SCRAPED DATA PROCESSING REPORT")
-    print("="*40)
-    print(f"Total Images Scanned:  {counts['total']}")
-    print(f"Images Kept (Unique):  {counts['kept']}")
-    print(f"Removed (No Horse):    {counts.get('no_horse', 0)}")
-    print(f"Removed (Duplicate):   {counts['removed_dup']}")
-    print(f"Removed (Small/Bad):   {counts['removed_size'] + counts['removed_dim'] + counts['removed_corrupt']}")
-    print("="*40)
+    # Summary
+    print("\n" + "="*50)
+    print("SCRAPED DATA PROCESSING REPORT")
+    print("="*50)
+    print(f"Total Images Scanned: {counts['total']}")
+    print(f"Kept (Cleaned):     {counts['kept']}")
+    print(f"Removed (Small):    {counts['removed_size'] + counts['removed_dim'] + counts['removed_corrupt']}")
+    print(f"Removed (No Horse): {counts['no_horse']}")
+    print(f"Removed (Duplicate):{counts['removed_dup']}")
     print(f"Clean data saved to: {CLEAN_DIR}")
+
+    # Prune small classes to prevent training errors
+    print("\nChecking for insufficient data classes...")
+    MIN_IMAGES_FOR_TRAINING = 10
+    pruned_count = 0
+    for breed_dir in CLEAN_DIR.iterdir():
+        if breed_dir.is_dir():
+            num_imgs = len(list(breed_dir.glob("*")))
+            if num_imgs < MIN_IMAGES_FOR_TRAINING:
+                print(f"⚠️  Pruning {breed_dir.name} ({num_imgs} images) - Not enough for training.")
+                import shutil
+                shutil.rmtree(breed_dir)
+                pruned_count += 1
+    
+    if pruned_count > 0:
+        print(f"Removed {pruned_count} breeds with insufficient data (<{MIN_IMAGES_FOR_TRAINING} images).")
+    else:
+        print("All breeds have sufficient data!")
 
 if __name__ == "__main__":
     process_scraped_images()
+```
