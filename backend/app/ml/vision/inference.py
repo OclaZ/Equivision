@@ -70,13 +70,40 @@ class BreedClassifierService:
         self._load_resources()
 
     def _load_resources(self):
+        self.img_size = (224, 224)  # Default, overridden by scraped model
 
         try:
-            # 1. Paths
             base_path = Path(__file__).resolve().parent
             weights_pth = base_path / "weights/best_model.pth"
-            
-            # Check for multiple TF model names
+
+            # --- Priority 1: New Scraped Model (best accuracy) ---
+            scraped_dir = base_path / "weights_tf_scraped"
+            scraped_model_candidates = [
+                scraped_dir / "best.h5",
+                scraped_dir / "horse_vision_final.h5",
+            ]
+            scraped_classes = scraped_dir / "class_indices.json"
+
+            if tf and scraped_classes.exists():
+                for model_path in scraped_model_candidates:
+                    if model_path.exists():
+                        try:
+                            self.model = tf.keras.models.load_model(str(model_path))
+                            self.model_type = 'tf'
+                            self.img_size = (260, 260)  # Scraped model uses 260x260
+
+                            with open(scraped_classes, 'r') as f:
+                                idx_map = json.load(f)
+                            # Sort by index to get correct order
+                            self.class_names = [k for k, v in sorted(idx_map.items(), key=lambda x: x[1])]
+
+                            logger.info(f"Scraped Vision Model loaded: {model_path.name} ({len(self.class_names)} classes)")
+                            logger.info(f"Classes: {self.class_names}")
+                            return  # Success
+                        except Exception as e:
+                            logger.error(f"Failed to load scraped model {model_path}: {e}")
+
+            # --- Priority 2: Legacy TF Model ---
             tf_model_candidates = [
                 base_path / "weights_tf/horse_vision_tf.h5",
                 base_path / "weights_tf/horse_vision_tf_final.h5",
@@ -87,62 +114,45 @@ class BreedClassifierService:
                 if p.exists():
                     weights_tf = p
                     break
-            
-            # Find labels
+
+            # Load legacy labels
             labels_path = None
-            possible_paths = [
-                Path("data/clean/horse-breeds/labels.json"),
-                Path("data/raw/horse-breeds/labels.json"),
-                base_path / "../../../data/clean/horse-breeds/labels.json",
+            for p in [
+                base_path / "../../../data/raw/horse-breeds/labels.json",
                 base_path / "weights_tf/labels.json",
-                Path("d:/EquiVision/backend/data/raw/horse-breeds/labels.json")
-            ]
-            
-            for p in possible_paths:
+            ]:
                 if p.exists():
                     labels_path = p
                     break
-            
+
             if labels_path:
-                 with open(labels_path, 'r') as f:
+                with open(labels_path, 'r') as f:
                     label_map = json.load(f)
-                    # For TF, labels are usually sorted folders
                     self.class_names = sorted(list(label_map.values()))
-                    logger.info(f"Loaded {len(self.class_names)} classes from {labels_path}")
+                    logger.info(f"Legacy labels: {len(self.class_names)} classes from {labels_path}")
 
-            # 2. Try loading TensorFlow model first (since it's the new request)
-            if tf:
-                if weights_tf:
-                    try:
-                        self.model = tf.keras.models.load_model(str(weights_tf))
-                        self.model_type = 'tf'
-                        logger.info(f"TensorFlow Model loaded from {weights_tf}")
-                        return # Success
-                    except Exception as e:
-                         logger.error(f"Failed to load existing TF model: {e}")
-                else:
-                    logger.warning(f"TensorFlow is available but model file not found in {base_path}/weights_tf/")
+            if tf and weights_tf:
+                try:
+                    self.model = tf.keras.models.load_model(str(weights_tf))
+                    self.model_type = 'tf'
+                    logger.info(f"Legacy TF Model loaded from {weights_tf}")
+                    return
+                except Exception as e:
+                    logger.error(f"Failed to load legacy TF model: {e}")
 
-            # 3. Fallback to PyTorch
-
-            # 3. Fallback to PyTorch
+            # --- Priority 3: PyTorch ---
             if torch and load_model and weights_pth.exists() and len(self.class_names) > 0:
                 self.model = load_model(weights_pth, num_classes=len(self.class_names), device=self.device)
                 self.transform = get_transforms(is_training=False)
                 self.model_type = 'torch'
                 logger.info(f"PyTorch Model loaded from {weights_pth}")
-                return # Success
+                return
 
             raise ImportError("No local models (.h5 or .pth) found or libraries missing.")
 
         except Exception as e:
-            logger.warning(f"Local Breed Classifier failed to start ({e}). Using Remote mode.")
+            logger.warning(f"Local Breed Classifier failed ({e}). Using Remote mode.")
             self.use_remote = True
-
-        except Exception as e:
-            logger.warning(f"Local Breed Classifier failed ({e}).Switching to Remote/Docker mode.")
-            self.use_remote = True
-            # In remote mode, we just need to forward the request
 
     def predict(self, image_file):
         """
@@ -208,8 +218,8 @@ class BreedClassifierService:
                     all_probs = probabilities[0].tolist()
 
             elif self.model_type == 'tf':
-                # Preprocess for MobileNetV2
-                img_input = image.resize((224, 224))
+                # Preprocess for TF model (uses self.img_size)
+                img_input = image.resize(self.img_size)
                 img_array = np.array(img_input).astype(np.float32)
                 img_array = np.expand_dims(img_array, axis=0)
                 
