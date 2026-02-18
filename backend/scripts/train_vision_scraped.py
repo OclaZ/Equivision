@@ -116,16 +116,19 @@ def train():
     prepare_balanced_data()
 
     print("Loading dataset...")
-    train_ds = tf.keras.utils.image_dataset_from_directory(
+    # Get class names first
+    _tmp_ds = tf.keras.utils.image_dataset_from_directory(
         TRAIN_DIR, validation_split=0.2, subset="training", seed=42,
         image_size=IMG_SIZE, batch_size=BATCH_SIZE, label_mode='categorical'
     )
+    class_names = _tmp_ds.class_names
+    # Rebatch with drop_remainder for MixUp compatibility
+    train_ds = _tmp_ds.unbatch().batch(BATCH_SIZE, drop_remainder=True)
+
     val_ds = tf.keras.utils.image_dataset_from_directory(
         TRAIN_DIR, validation_split=0.2, subset="validation", seed=42,
         image_size=IMG_SIZE, batch_size=BATCH_SIZE, label_mode='categorical'
     )
-
-    class_names = train_ds.class_names
     num_classes = len(class_names)
     print(f"Training {num_classes} classes: {class_names}\n")
 
