@@ -2,6 +2,7 @@ import pandas as pd
 import re
 import numpy as np
 from pathlib import Path
+from datetime import datetime
 
 # Configuration
 DATA_DIR = Path("data")
@@ -9,120 +10,165 @@ BRONZE_PATH = DATA_DIR / "bronze" / "horse_prices_raw.csv"
 SILVER_PATH = DATA_DIR / "silver" / "horse_prices_cleaned.csv"
 GOLD_PATH = DATA_DIR / "gold" / "horse_features_final.csv"
 
-# Global Breed Dictionary (Standard: List of known breeds to look for)
-KNOWN_BREEDS = [
-    "Arabe", "Barbe", "Arabe-Barbe", "English Thoroughbred", "Thoroughbred", "Pur-Sang",
-    "Appaloosa", "Quarter Horse", "Paint Horse", "Pony", "Poney", "Shetland",
-    "Friesian", "Frison", "Lusitano", "Andalusian", "PRE", "Hanoverian", "Oldenburg",
-    "Holsteiner", "Westphalian", "KWPN", "Icelandic", "Haflinger", "Morgan",
-    "Warmblood", "Sport Horse", "Pottok", "Anglo-Arabe", "Barb", "Arabian",
-    "Percheron", "Shire", "Clydesdale", "Lipizzaner", "Connemara", "Welsh"
-]
+# Current Year for Age Calculation
+CURRENT_YEAR = datetime.now().year
 
-# Words that indicate bad data or noise
-NOISE_WORDS = ["vendre", "cherche", "donne", "accessoire", "équipement", "selle", "van", "transport"]
+# --- KNOWLEDGE BASES ---
+BREED_MAP = {
+    # Arabs
+    "arabian": "Arabian", "arabe": "Arabian", "ox": "Arabian", "pur sang arabe": "Arabian",
+    # Barbs
+    "barb": "Barb", "barbe": "Barb", 
+    "arabian-barb": "Arabian-Barb Mix", "arabe-barbe": "Arabian-Barb Mix", "arabe barbe": "Arabian-Barb Mix",
+    # Thoroughbreds
+    "thoroughbred": "Thoroughbred", "pur sang": "Thoroughbred", "ps": "Thoroughbred", "anglo": "Anglo-Arabian",
+    # Warmbloods
+    "friesian": "Friesian", "frison": "Friesian", 
+    "andalusian": "Andalusian", "pre": "Andalusian", "pura raza española": "Andalusian", "espagnol": "Andalusian",
+    "lusitano": "Lusitano", "lusitanien": "Lusitano", "psl": "Lusitano",
+    "hanoverian": "Hanoverian", "hanovre": "Hanoverian",
+    "holsteiner": "Holsteiner", "holstein": "Holsteiner",
+    "kwpn": "KWPN", "dutch warmblood": "KWPN",
+    "sf": "Selle Français", "selle francais": "Selle Français", "selle français": "Selle Français",
+    "oldenburg": "Oldenburg", "westphalian": "Westphalian",
+    # Drafts
+    "percheron": "Percheron", "shire": "Shire", "clydesdale": "Clydesdale", "breton": "Breton",
+    "comtois": "Comtois", "boulonnais": "Boulonnais",
+    # Ponies
+    "shetland": "Shetland", "welsh": "Welsh", "connemara": "Connemara", "haflinger": "Haflinger", 
+    "fjords": "Fjord", "pottok": "Pottok", "pony": "Pony", "poney": "Pony"
+}
 
-def extract_breed(title, current_breed):
-    """
-    Tries to find a real breed from the title if current_breed is generic.
-    """
-    generic_terms = ["cheval", "poney", "pony", "horse", "unknown", "other", "breed"]
+GENDER_MAP = {
+    "male": "Stallion", "mâle": "Stallion", "etalon": "Stallion", "étalon": "Stallion", "stallion": "Stallion", "entier": "Stallion",
+    "female": "Mare", "femelle": "Mare", "jument": "Mare", "mare": "Mare", "poulinière": "Mare",
+    "gelding": "Gelding", "hongre": "Gelding"
+}
+
+NOISE_WORDS = ["vendre", "cherche", "donne", "camion", "van", "transport", "paille", "foin", "selle", "equipement", "botte"]
+
+def clean_text(text):
+    if not isinstance(text, str): return ""
+    return re.sub(r'[^\w\s]', ' ', text.lower()).strip()
+
+def extract_breed_smart(text):
+    text = clean_text(text)
+    # Check specific compound breeds first (Arabe-Barbe)
+    if "arabe barbe" in text or "arabe-barbe" in text:
+        return "Arabian-Barb Mix"
     
-    # If breed is already specific, just standardize it
-    if str(current_breed).lower() not in generic_terms and len(str(current_breed)) > 3:
-        return current_breed
-
-    # Search in title
-    for b in KNOWN_BREEDS:
-        if re.search(r'\b' + re.escape(b) + r'\b', str(title), re.IGNORECASE):
-            return b
-            
+    # Check single words
+    for key, value in BREED_MAP.items():
+        # Look for word boundary to avoid partial matches (e.g. "barbe" inside "barbecue" - unlikely but robust)
+        if re.search(r'\b' + re.escape(key) + r'\b', text):
+            return value
     return "Unknown"
 
-def is_garbage_title(title):
-    """
-    Checks if the title is likely a person's name or nonsense.
-    """
-    t = str(title).lower()
-    # If title is just 1 or 2 words that look like names (e.g., "Kaddouri Mohamed")
-    # This is a heuristic: titles with no horse-related keywords or extremely short.
-    horse_keywords = ["cheval", "poney", "horse", "mare", "stallion", "pouliche", "hongre", "year", "ans"]
-    horse_keywords += [b.lower() for b in KNOWN_BREEDS]
-    
-    has_keyword = any(kw in t for kw in horse_keywords)
-    
-    # Very short titles or titles with common noise
-    if len(t) < 5: return True
-    if any(noise in t for noise in NOISE_WORDS): return True
-    
-    # If it's a Moroccan source (avito) and has no keywords, it's risky
-    # (Actually many people just put the horse name, but names are hard to detect)
-    # Let's be conservative for "100% clean data"
-    return False
+def extract_gender(text):
+    text = clean_text(text)
+    for key, value in GENDER_MAP.items():
+        if re.search(r'\b' + re.escape(key) + r'\b', text):
+            return value
+    return "Unknown"
 
-def clean_horse_data():
+def extract_age_smart(text):
+    text = clean_text(text)
+    
+    # Pattern 1: Explicit "X years/ans"
+    match = re.search(r'(\d{1,2})\s*(ans|an|years|yrs)', text)
+    if match:
+        age = int(match.group(1))
+        if 0 <= age <= 35: return age
+
+    # Pattern 2: Birth Year "2015", "né en 2018"
+    # Search for years explicitly between 1990 and Current Year
+    matches = re.findall(r'\b(199[0-9]|20[0-2][0-9])\b', text)
+    if matches:
+        # Take the most recent year found (likely the birth year)
+        birth_year = int(max(matches)) 
+        return CURRENT_YEAR - birth_year
+
+    return np.nan
+
+def extract_height(text):
+    text = clean_text(text)
+    # Pattern: 1m65, 1.65m, 165cm
+    match = re.search(r'(\d)[m\.](\d{2})', text)
+    if match:
+        return int(match.group(1)) * 100 + int(match.group(2)) # Returns cm
+    
+    match_cm = re.search(r'(\d{3})\s*cm', text)
+    if match_cm:
+        return int(match_cm.group(1))
+        
+    return np.nan
+
+def clean_data_pro():
     if not BRONZE_PATH.exists():
-        print("Bronze data not found!")
+        print(f"❌ Input file not found: {BRONZE_PATH}")
         return
 
+    print("🚀 Starting God-Tier Data Cleaning...")
     df = pd.read_csv(BRONZE_PATH)
-    print(f"Initial Bronze Records: {len(df)}")
-
-    # 1. Basic Cleaning
-    df['title'] = df['title'].fillna("Unknown")
+    print(f"   Initial Records: {len(df)}")
+    
+    # Combine Title + Description for better extraction
+    # (Assuming description col exists, if not create empty)
+    if 'description' not in df.columns:
+        df['description'] = ""
+    
+    df['full_text'] = df['title'].fillna("") + " " + df['description'].fillna("")
+    
+    # 1. Price Filtering
     df['price_mad'] = pd.to_numeric(df['price_mad'], errors='coerce')
     df = df.dropna(subset=['price_mad'])
-    
-    # 2. Strict Outlier Filter (Quality control)
-    # Too cheap: Not a horse. Too expensive: Likely fake or extreme luxury.
-    df = df[(df['price_mad'] >= 5000) & (df['price_mad'] <= 1500000)]
+    df = df[(df['price_mad'] > 1000) & (df['price_mad'] < 2000000)] # Remove < 1000 (likely fake/accessories)
+    print(f"   After Price Filter: {len(df)}")
 
-    # 3. Garbage Title Removal
-    df = df[~df['title'].apply(is_garbage_title)]
-    print(f"Records after title filter: {len(df)}")
+    # 2. Garbage Removal
+    mask_garbage = df['title'].apply(lambda x: any(w in str(x).lower() for w in NOISE_WORDS))
+    df = df[~mask_garbage]
+    print(f"   After Garbage Removal: {len(df)}")
 
-    # 4. Breed Extraction & Standardization
-    df['breed_clean'] = df.apply(lambda x: extract_breed(x['title'], x['breed']), axis=1)
-    
-    # 5. Drop remaining 'Unknown' breeds if we want "100% clean"
-    # The user said "Cheval is not a breed", so they want actual breeds.
-    clean_df = df[df['breed_clean'] != "Unknown"].copy()
-    
-    # 6. Standardization Mapping
-    map_dict = {
-        "Frison": "Friesian",
-        "Poney": "Pony",
-        "Pur-Sang": "Thoroughbred",
-        "English Thoroughbred": "Thoroughbred",
-        "Arabe": "Arabian",
-        "Barbe": "Barb",
-        "Arabe-Barbe": "Arabian-Barb Mix",
-        "PRE": "Pura Raza Española"
-    }
-    clean_df['breed_clean'] = clean_df['breed_clean'].replace(map_dict)
+    # 3. Feature Extraction
+    print("   Extracting Features (Breed, Age, Gender, Height)...")
+    df['breed_clean'] = df['full_text'].apply(extract_breed_smart)
+    df['gender_clean'] = df['full_text'].apply(extract_gender)
+    df['age_clean'] = df['full_text'].apply(extract_age_smart)
+    df['height_cm'] = df['full_text'].apply(extract_height)
 
-    # 7. Final deduplication
-    clean_df = clean_df.drop_duplicates(subset=['url'])
+    # 4. Filter Unknown Breeds (Crucial for pricing model)
+    df_silver = df[df['breed_clean'] != "Unknown"].copy()
+    print(f"   After Breed Filter (Silver): {len(df_silver)}")
     
     # Save Silver
-    clean_df.to_csv(SILVER_PATH, index=False)
-    print(f"Silver Records (Strictly Cleaned): {len(clean_df)}")
+    SILVER_PATH.parent.mkdir(parents=True, exist_ok=True)
+    df_silver.to_csv(SILVER_PATH, index=False)
     
-    # 8. Gold Layer (Features)
-    df_gold = clean_df.copy()
-    df_gold['log_price'] = np.log10(df_gold['price_mad'])
-    df_gold['breed'] = df_gold['breed_clean'] # Standardize back to main col
+    # 5. Create Gold Dataset (Ready for ML)
+    # Fill missing age with mean per breed? Or drop? 
+    # For now, let's keep them but mark as unknown for the ML model to handle or impute later.
+    df_gold = df_silver.copy()
     
-    # Add age extraction if possible (Simplified)
-    def extract_age(text):
-        match = re.search(r'(\d+)\s*(ans|years|jahre)', str(text).lower())
-        return int(match.group(1)) if match else np.nan
+    # Select columns
+    cols = ['title', 'price_mad', 'breed_clean', 'gender_clean', 'age_clean', 'height_cm', 'url', 'location']
+    final_cols = [c for c in cols if c in df_gold.columns]
+    df_gold = df_gold[final_cols]
     
-    df_gold['age_num'] = df_gold['title'].apply(extract_age)
+    # Rename for consistency
+    df_gold = df_gold.rename(columns={
+        'breed_clean': 'breed',
+        'gender_clean': 'gender',
+        'age_clean': 'age'
+    })
+
+    # Drop entries with NO detailed info? 
+    # Actually, keep them if they have at least breed + price.
     
-    # Filter: Only keep records that have a clear breed now
+    GOLD_PATH.parent.mkdir(parents=True, exist_ok=True)
     df_gold.to_csv(GOLD_PATH, index=False)
-    print(f"Gold Records (Final Clean): {len(df_gold)}")
+    print(f"✅ FINAL GOLD DATASET SAVED: {len(df_gold)} records")
+    print(f"   Path: {GOLD_PATH}")
 
 if __name__ == "__main__":
-    clean_horse_data()
+    clean_data_pro()

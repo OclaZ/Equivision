@@ -84,6 +84,7 @@ class PriceEstimateRequest(BaseModel):
     breed: Optional[str] = None
     gender: Optional[str] = None
     age: Optional[int] = None
+    height: Optional[int] = None # New feature
 
 # Include routers conditionally
 ml_mode = os.getenv("ML_MODE", "FULL")
@@ -146,7 +147,8 @@ async def predict_price(request: PriceEstimateRequest):
         result = pricing_service.predict(
             breed=request.breed,
             gender=request.gender,
-            age=request.age
+            age=request.age,
+            height=request.height
         )
         return result
     except Exception as e:
@@ -154,7 +156,7 @@ async def predict_price(request: PriceEstimateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/predict/complete")
-async def predict_complete(file: UploadFile = File(...), gender: Optional[str] = None, age: Optional[int] = None):
+async def predict_complete(file: UploadFile = File(...), gender: Optional[str] = None, age: Optional[int] = None, height: Optional[int] = None):
     """
     Combined endpoint: Upload horse image and get both breed classification and price estimate.
     """
@@ -174,7 +176,8 @@ async def predict_complete(file: UploadFile = File(...), gender: Optional[str] =
         price_result = pricing_service.predict(
             breed=detected_breed.lower(),
             gender=gender,
-            age=age
+            age=age,
+            height=height
         )
         
         # Step 3: Combine results

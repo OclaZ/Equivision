@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 # --- CONFIGURATION ---
-BASE_DIR = Path("d:/EquiVision/backend/data/raw/horse-breeds/")
+BASE_DIR = Path("data/raw/horse-breeds/")
 LABELS_PATH = BASE_DIR / "labels.json"
 
 # Breed IDs to Names (Single Source of Truth)

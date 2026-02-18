@@ -1,90 +1,91 @@
 
-import json
 import logging
+import joblib
+import pandas as pd
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
 class PricingService:
     def __init__(self):
-        self.model_info = None
+        self.pipeline = None
         self._load_model()
 
     def _load_model(self):
         try:
-            model_info_path = Path(__file__).resolve().parent / "weights/model_info.json"
+            # Load the trained XGBoost Pipeline
+            weights_dir = Path(__file__).resolve().parent / "weights"
+            model_path = weights_dir / "pricing_pipeline.joblib"
             
-            if not model_info_path.exists():
-                logger.error(f"Model info not found at {model_info_path}")
-                raise FileNotFoundError("Pricing model not initialized")
-            
-            with open(model_info_path, 'r') as f:
-                self.model_info = json.load(f)
-            
-            logger.info("Pricing model loaded successfully.")
+            if not model_path.exists():
+                logger.warning(f"ML Pipeline not found at {model_path}. creating dummy pipeline for dev.")
+                # In production, we should maybe raise error or download from S3
+                # For now, we will raise error to force training
+                # raise FileNotFoundError("Pricing model not initialized. Run train.py first.")
+                return
+
+            self.pipeline = joblib.load(model_path)
+            logger.info(f"XGBoost Pricing Model loaded from {model_path}")
             
         except Exception as e:
             logger.error(f"Failed to load Pricing model: {e}")
-            raise
+            self.pipeline = None
 
-    def predict(self, breed: str = None, gender: str = None, age: int = None) -> Dict[str, Any]:
+    def predict(self, breed: Optional[str] = None, gender: Optional[str] = None, 
+                age: Optional[int] = None, height: Optional[int] = None) -> Dict[str, Any]:
         """
-        Predict horse price based on features.
-        Currently uses rule-based approach with statistics.
+        Predict horse price using XGBoost ML pipeline.
         
         Args:
-            breed: Horse breed (optional)
-            gender: Horse gender (optional)
-            age: Horse age in years (optional)
-        
-        Returns:
-            Dictionary with price estimate and confidence interval
+            breed: Horse breed (e.g. 'Arabian')
+            gender: 'Mare', 'Stallion', 'Gelding'
+            age: Age in years
+            height: Height in cm
         """
-        if not self.model_info:
-            raise RuntimeError("Model not initialized")
+        if not self.pipeline:
+            # Fallback to simple logic if model not trained yet
+            return {
+                "estimated_price": 0,
+                "note": "Model not trained yet. Contact admin."
+            }
 
         try:
-            stats = self.model_info['statistics']
+            # Create DataFrame from inputs (Pipeline expects specific columns)
+            input_df = pd.DataFrame([{
+                'breed': breed if breed else "Unknown",
+                'gender': gender if gender else "Unknown",
+                'age': age if age is not None else np.nan, # Imputer will handle NaN
+                'height_cm': height if height is not None else np.nan
+            }])
             
-            # Simple rule-based pricing
-            # Base price is the average
-            base_price = stats['average']
+            # Predict
+            # Since XGBoost is trained on log labels? No, current train.py uses raw price.
+            # If we changed to log, we'd need np.exp() here.
+            # Current train.py target = 'price_mad'.
             
-            # Adjust based on breed (simplified)
-            breed_multipliers = {
-                'arabe': 1.3,
-                'barbe': 1.1,
-                'anglo': 1.4,
-                'espagnol': 1.2,
-                'frison': 1.5,
-                'poney': 0.7,
-                'shetland': 0.6,
-            }
+            predicted_price = self.pipeline.predict(input_df)[0]
+            predicted_price = max(0, float(predicted_price)) # No negative prices
             
-            multiplier = 1.0
-            if breed and breed.lower() in breed_multipliers:
-                multiplier = breed_multipliers[breed.lower()]
-            
-            estimated_price = base_price * multiplier
-            
-            # Calculate confidence interval (±30% for now)
-            confidence_range = estimated_price * 0.3
+            # Confidence Interval logic (Simplified, since XGBoost doesn't give std natively easily)
+            # We can use the MAE from training as a rough interval
+            # Or just +/- 20%
+            confidence_range = predicted_price * 0.2
             
             return {
-                "estimated_price": round(estimated_price, 2),
-                "currency": "DH",
+                "estimated_price": round(predicted_price, 0),
+                "currency": "MAD",
                 "confidence_interval": {
-                    "min": round(estimated_price - confidence_range, 2),
-                    "max": round(estimated_price + confidence_range, 2)
+                    "min": round(max(0, predicted_price - confidence_range), 0),
+                    "max": round(predicted_price + confidence_range, 0)
                 },
-                "model_type": self.model_info.get('type', 'unknown'),
-                "factors_considered": {
-                    "breed": breed or "not_specified",
-                    "gender": gender or "not_specified",
-                    "age": age or "not_specified"
-                },
-                "note": "Estimate based on market data from Avito.ma"
+                "ml_model_version": "v2.0 (XGBoost)",
+                "inputs": {
+                    "breed": breed,
+                    "gender": gender,
+                    "age": age,
+                    "height": height
+                }
             }
             
         except Exception as e:
