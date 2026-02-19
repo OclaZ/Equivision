@@ -1,6 +1,7 @@
 
 import logging
 import joblib
+import numpy as np
 import pandas as pd
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -56,7 +57,7 @@ class PricingService:
                 'breed': breed if breed else "Unknown",
                 'gender': gender if gender else "Unknown",
                 'age': age if age is not None else np.nan, # Imputer will handle NaN
-                'height_cm': height if height is not None else np.nan
+                'height': height if height is not None else np.nan
             }])
             
             # Predict
