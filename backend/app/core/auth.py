@@ -1,3 +1,5 @@
+import os
+import logging
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
@@ -9,8 +11,13 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.database import User
 
-# Configuration
-SECRET_KEY = "your-secret-key-change-in-production"  # TODO: Move to environment variable
+logger = logging.getLogger(__name__)
+
+# Configuration — SECRET_KEY MUST be set via environment in production
+SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+if not SECRET_KEY:
+    SECRET_KEY = "dev-only-insecure-key-change-me"
+    logger.warning("⚠️  JWT_SECRET_KEY not set! Using insecure dev key. Set JWT_SECRET_KEY env var for production.")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 

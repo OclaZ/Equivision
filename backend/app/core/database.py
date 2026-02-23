@@ -2,12 +2,15 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.models.database import Base
 import os
+import logging
 
-# Database URL from environment or default
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://postgres:equivision123@localhost:5433/equivision_db"
-)
+logger = logging.getLogger(__name__)
+
+# Database URL from environment — no hardcoded credentials
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/equivision_db"
+    logger.warning("⚠️  DATABASE_URL not set! Using default local connection. Set DATABASE_URL env var for production.")
 
 # Create engine
 engine = create_engine(DATABASE_URL)
