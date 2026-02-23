@@ -32,3 +32,13 @@ backend/app/ml/vision/weights_tf_scraped/
 backend/app/ml/pricing/weights/
 *.joblib
 .agent/
+
+# Architecture doc (internal only)
+ARCHITECTURE.md
+
+# Airflow logs (generated at runtime)
+airflow/logs/
+!airflow/logs/.gitkeep
+
+# Monitoring data (generated at runtime)
+monitoring/grafana/data/

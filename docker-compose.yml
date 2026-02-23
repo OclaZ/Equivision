@@ -1,6 +1,43 @@
-version: '3.8'
+version: "3.8"
+
+# ============================================================================
+#  EquiVision — Full Infrastructure Stack
+#  Services: FastAPI, Next.js, PostgreSQL, Redis,
+#            Airflow, MLflow, Prometheus, Grafana
+# ============================================================================
+
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.10.4-python3.11
+  environment: &airflow-env
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/airflow_db
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/airflow_db
+    AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/1
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__API__AUTH_BACKENDS: "airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session"
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+    # MLflow connection
+    MLFLOW_TRACKING_URI: http://mlflow:5000
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/logs:/opt/airflow/logs
+    - ./airflow/plugins:/opt/airflow/plugins
+    - ./backend:/opt/airflow/backend # Access to training scripts
+  depends_on:
+    database:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  networks:
+    - equivision-network
 
 services:
+  # ==========================================================================
+  #  CORE APPLICATION
+  # ==========================================================================
+
   backend:
     build:
       context: ./backend
@@ -15,13 +52,18 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
-      - REDIS_URL=${REDIS_URL}
+      - REDIS_URL=redis://redis:6379/0
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
     depends_on:
-      - database
-      - redis
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - equivision-network
+    restart: unless-stopped
 
   frontend:
     build:
@@ -36,9 +78,14 @@ services:
       - backend
     networks:
       - equivision-network
+    restart: unless-stopped
+
+  # ==========================================================================
+  #  DATA STORES
+  # ==========================================================================
 
   database:
-    image: ankane/pgvector:v0.4.1 # Or appropriate pgvector image
+    image: postgres:16-alpine
     container_name: equivision-db
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
@@ -48,12 +95,19 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./infra/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     networks:
       - equivision-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     deploy:
       resources:
         limits:
           memory: 1G
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
@@ -64,28 +118,175 @@ services:
       - redis-data:/data
     networks:
       - equivision-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
 
-  minio:
-    image: minio/minio
-    container_name: equivision-minio
+  # ==========================================================================
+  #  MLFLOW — Model Tracking & Registry
+  #  Artifacts stored on local filesystem (no MinIO needed)
+  # ==========================================================================
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.16.0
+    container_name: equivision-mlflow
     ports:
-      - "${MINIO_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "${MLFLOW_PORT:-5000}:5000"
     environment:
-      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
-    command: server /data --console-address ":9001"
+      - MLFLOW_BACKEND_STORE_URI=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/mlflow_db
+    command: >
+      mlflow server
+      --backend-store-uri postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/mlflow_db
+      --default-artifact-root /mlflow/artifacts
+      --host 0.0.0.0
+      --port 5000
     volumes:
-      - minio-data:/data
+      - mlflow-artifacts:/mlflow/artifacts
+    depends_on:
+      database:
+        condition: service_healthy
     networks:
       - equivision-network
+    restart: unless-stopped
+
+  # ==========================================================================
+  #  AIRFLOW — Pipeline Orchestration
+  # ==========================================================================
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: equivision-airflow-init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create \
+          --username ${AIRFLOW_ADMIN_USER:-airflow} \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email admin@equivision.local \
+          --password ${AIRFLOW_ADMIN_PASSWORD:-airflow}
+        echo "Airflow initialization complete"
+    restart: on-failure
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: equivision-airflow-webserver
+    command: webserver
+    ports:
+      - "${AIRFLOW_PORT:-8080}:8080"
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: equivision-airflow-scheduler
+    command: scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  airflow-worker:
+    <<: *airflow-common
+    container_name: equivision-airflow-worker
+    command: celery worker
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # ==========================================================================
+  #  MONITORING — Prometheus + Grafana
+  # ==========================================================================
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: equivision-prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+    networks:
+      - equivision-network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: equivision-grafana
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+    networks:
+      - equivision-network
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.1
+    container_name: equivision-node-exporter
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+    networks:
+      - equivision-network
+    restart: unless-stopped
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: equivision-cadvisor
+    ports:
+      - "8081:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - equivision-network
+    restart: unless-stopped
+
+# ==========================================================================
+#  VOLUMES
+# ==========================================================================
 
 volumes:
   postgres-data:
   redis-data:
-  minio-data:
   backend-data:
+  mlflow-artifacts:
+  prometheus-data:
+  grafana-data:
 
+# ==========================================================================
+#  NETWORKS
+# ==========================================================================
 
 networks:
   equivision-network:
