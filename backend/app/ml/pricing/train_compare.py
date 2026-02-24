@@ -516,15 +516,13 @@ def get_models_and_params():
 
 
 def build_stacking_model():
-    """Build a stacking ensemble (XGB + HistGB + GBR → Ridge)."""
-    from xgboost import XGBRegressor
+    """Build a stacking ensemble (RF + HistGB + GBR → Ridge).
+    Uses only sklearn-native regressors to avoid compatibility issues."""
 
     estimators = [
-        ("xgb", XGBRegressor(
-            n_estimators=300, learning_rate=0.05, max_depth=6,
-            subsample=0.8, colsample_bytree=0.8,
-            reg_alpha=0.5, reg_lambda=1.0,
-            random_state=RANDOM_STATE, n_jobs=-1, verbosity=0,
+        ("rf", RandomForestRegressor(
+            n_estimators=200, max_depth=15, min_samples_leaf=5,
+            random_state=RANDOM_STATE, n_jobs=-1,
         )),
         ("histgb", HistGradientBoostingRegressor(
             max_iter=400, learning_rate=0.05, max_depth=8,
@@ -634,47 +632,51 @@ def train_and_compare(X_train, X_test, y_train, y_test, y_raw_test,
         logger.info(f"  └──────────────────────────────────────────────┘")
 
     # ── Stacking Ensemble ──
-    logger.info("\n" + "=" * 60)
-    logger.info("  MODEL: StackingEnsemble (XGB + HistGB + GBR → Ridge)")
-    logger.info("=" * 60)
-    logger.info("  Training stacking ensemble with 5-fold CV base learners...")
+    try:
+        logger.info("\n" + "=" * 60)
+        logger.info("  MODEL: StackingEnsemble (RF + HistGB + GBR → Ridge)")
+        logger.info("=" * 60)
+        logger.info("  Training stacking ensemble with 5-fold CV base learners...")
 
-    t_start = time.time()
-    stacking = build_stacking_model()
-    stacking_pipeline = Pipeline([
-        ("preprocessor", preprocessor),
-        ("model", stacking),
-    ])
-    stacking_pipeline.fit(X_train, y_train)
-    t_elapsed = time.time() - t_start
+        t_start = time.time()
+        stacking = build_stacking_model()
+        stacking_pipeline = Pipeline([
+            ("preprocessor", preprocessor),
+            ("model", stacking),
+        ])
+        stacking_pipeline.fit(X_train, y_train)
+        t_elapsed = time.time() - t_start
 
-    y_pred_log = stacking_pipeline.predict(X_test)
-    y_pred_eur = np.maximum(np.expm1(y_pred_log), 0)
-    y_actual_eur = y_raw_test.values
+        y_pred_log = stacking_pipeline.predict(X_test)
+        y_pred_eur = np.maximum(np.expm1(y_pred_log), 0)
+        y_actual_eur = y_raw_test.values
 
-    mae = mean_absolute_error(y_actual_eur, y_pred_eur)
-    rmse = np.sqrt(mean_squared_error(y_actual_eur, y_pred_eur))
-    r2 = r2_score(y_actual_eur, y_pred_eur)
-    r2_log = r2_score(y_test, y_pred_log)
-    mape = mean_absolute_percentage_error(y_actual_eur, y_pred_eur) * 100
+        mae = mean_absolute_error(y_actual_eur, y_pred_eur)
+        rmse = np.sqrt(mean_squared_error(y_actual_eur, y_pred_eur))
+        r2 = r2_score(y_actual_eur, y_pred_eur)
+        r2_log = r2_score(y_test, y_pred_log)
+        mape = mean_absolute_percentage_error(y_actual_eur, y_pred_eur) * 100
 
-    result = {
-        "name": "StackingEnsemble", "test_mae": mae, "test_rmse": rmse,
-        "test_r2": r2, "test_r2_log": r2_log, "test_mape": mape,
-        "train_time_s": t_elapsed,
-        "best_params": {"stacking": "XGB+HistGB+GBR→Ridge"},
-        "best_pipeline": stacking_pipeline,
-    }
-    results.append(result)
+        result = {
+            "name": "StackingEnsemble", "test_mae": mae, "test_rmse": rmse,
+            "test_r2": r2, "test_r2_log": r2_log, "test_mape": mape,
+            "train_time_s": t_elapsed,
+            "best_params": {"stacking": "RF+HistGB+GBR→Ridge"},
+            "best_pipeline": stacking_pipeline,
+        }
+        results.append(result)
 
-    logger.info(f"  ┌──────────────────────────────────────────────┐")
-    logger.info(f"  │  R² (log):    {r2_log:>8.4f}                  │")
-    logger.info(f"  │  R² (EUR):    {r2:>8.4f}                  │")
-    logger.info(f"  │  MAE:    {mae:>10,.0f} EUR                  │")
-    logger.info(f"  │  RMSE:   {rmse:>10,.0f} EUR                  │")
-    logger.info(f"  │  MAPE:   {mape:>9.1f}%                       │")
-    logger.info(f"  │  Time:   {t_elapsed:>8.1f}s                       │")
-    logger.info(f"  └──────────────────────────────────────────────┘")
+        logger.info(f"  ┌──────────────────────────────────────────────┐")
+        logger.info(f"  │  R² (log):    {r2_log:>8.4f}                  │")
+        logger.info(f"  │  R² (EUR):    {r2:>8.4f}                  │")
+        logger.info(f"  │  MAE:    {mae:>10,.0f} EUR                  │")
+        logger.info(f"  │  RMSE:   {rmse:>10,.0f} EUR                  │")
+        logger.info(f"  │  MAPE:   {mape:>9.1f}%                       │")
+        logger.info(f"  │  Time:   {t_elapsed:>8.1f}s                       │")
+        logger.info(f"  └──────────────────────────────────────────────┘")
+    except Exception as e:
+        logger.warning(f"  ⚠️ Stacking ensemble failed: {e}")
+        logger.warning("  Continuing with individual model results...")
 
     return results
 
