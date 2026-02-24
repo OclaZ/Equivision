@@ -1,13 +1,15 @@
 """
 ╔══════════════════════════════════════════════════════════════════════╗
 ║  EquiVision — Pricing Model Comparison Pipeline                     ║
-║  4 Scikit-Learn Models × RandomizedSearchCV × SelectKBest           ║
+║  6 Models × RandomizedSearchCV × SelectKBest                        ║
 ║                                                                      ║
 ║  Models:                                                             ║
 ║    1. Ridge Regression              (linear baseline)               ║
-║    2. HistGradientBoosting          (fast boosting, native NaN)      ║
-║    3. Gradient Boosting Regressor   (classic boosting)               ║
-║    4. SVR                           (kernel-based)                   ║
+║    2. Random Forest                 (bagging, lean grid)            ║
+║    3. HistGradientBoosting          (fast native boosting)          ║
+║    4. Gradient Boosting Regressor   (classic boosting)              ║
+║    5. XGBoost                       (extreme gradient boosting)     ║
+║    6. SVR                           (kernel-based, small grid)      ║
 ║                                                                      ║
 ║  Output: best model saved as pricing_pipeline.joblib                 ║
 ╚══════════════════════════════════════════════════════════════════════╝
@@ -24,6 +26,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import randint, uniform
 from sklearn.compose import ColumnTransformer
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.ensemble import GradientBoostingRegressor, HistGradientBoostingRegressor
 from sklearn.feature_selection import SelectKBest, f_regression, mutual_info_regression
 from sklearn.impute import SimpleImputer
@@ -56,7 +59,7 @@ OUTPUT_DIR = Path(__file__).resolve().parent / "weights"
 RANDOM_STATE = 42
 TEST_SIZE = 0.2
 CV_FOLDS = 5
-N_ITER_RANDOM = 30  # RandomizedSearchCV iterations for heavy models
+N_ITER_RANDOM = 20  # RandomizedSearchCV iterations for heavy models
 
 
 def load_and_prepare_data():
@@ -124,10 +127,12 @@ def build_preprocessor(categorical_features, numerical_features):
 
 def get_models_and_params():
     """
-    Define the 4 scikit-learn models with their search configs.
+    Define the 6 models with their search configs.
     Each entry: (name, model, param_grid/distributions, search_type)
       - search_type: "grid" for small grids, "random" for large spaces
     """
+    from xgboost import XGBRegressor
+
     models = [
         # ─── 1. Ridge Regression (linear baseline) ───
         (
@@ -138,42 +143,64 @@ def get_models_and_params():
             },
             "grid",
         ),
-        # ─── 2. HistGradientBoosting (fast native boosting) ───
-        #   10-50x faster than RandomForest, handles NaN natively
+        # ─── 2. Random Forest (bagging, lean search) ───
+        (
+            "RandomForest",
+            RandomForestRegressor(random_state=RANDOM_STATE, n_jobs=-1),
+            {
+                "model__n_estimators": [100, 200],
+                "model__max_depth": [10, 20],
+                "model__min_samples_leaf": [2, 5],
+            },
+            "grid",
+        ),
+        # ─── 3. HistGradientBoosting (fast native boosting) ───
         (
             "HistGradientBoosting",
             HistGradientBoostingRegressor(random_state=RANDOM_STATE),
             {
                 "model__max_iter": randint(100, 500),
-                "model__learning_rate": uniform(0.01, 0.19),  # 0.01–0.20
-                "model__max_depth": randint(3, 12),
+                "model__learning_rate": uniform(0.01, 0.19),
+                "model__max_depth": randint(3, 10),
                 "model__min_samples_leaf": randint(5, 50),
                 "model__l2_regularization": uniform(0.0, 1.0),
-                "model__max_bins": [128, 255],
             },
             "random",
         ),
-        # ─── 3. Gradient Boosting Regressor (classic boosting) ───
+        # ─── 4. Gradient Boosting Regressor (classic boosting) ───
         (
             "GradientBoosting",
             GradientBoostingRegressor(random_state=RANDOM_STATE),
             {
-                "model__n_estimators": randint(100, 400),
+                "model__n_estimators": randint(100, 300),
                 "model__learning_rate": uniform(0.01, 0.19),
-                "model__max_depth": randint(3, 8),
-                "model__subsample": uniform(0.7, 0.3),  # 0.7–1.0
-                "model__min_samples_leaf": randint(1, 10),
+                "model__max_depth": randint(3, 7),
+                "model__subsample": uniform(0.7, 0.3),
             },
             "random",
         ),
-        # ─── 4. SVR (kernel-based) ───
+        # ─── 5. XGBoost (extreme gradient boosting) ───
+        (
+            "XGBoost",
+            XGBRegressor(random_state=RANDOM_STATE, n_jobs=-1, verbosity=0),
+            {
+                "model__n_estimators": randint(100, 400),
+                "model__learning_rate": uniform(0.01, 0.19),
+                "model__max_depth": randint(3, 10),
+                "model__subsample": uniform(0.7, 0.3),
+                "model__colsample_bytree": uniform(0.6, 0.4),
+                "model__reg_alpha": uniform(0.0, 1.0),
+                "model__reg_lambda": uniform(0.0, 2.0),
+            },
+            "random",
+        ),
+        # ─── 6. SVR (kernel-based, small grid — SVR is O(n²)) ───
         (
             "SVR",
-            SVR(),
+            SVR(kernel="rbf"),
             {
-                "model__C": [0.1, 1.0, 10.0, 100.0],
-                "model__epsilon": [0.01, 0.1, 0.5],
-                "model__kernel": ["rbf", "linear"],
+                "model__C": [1.0, 10.0],
+                "model__epsilon": [0.1, 0.5],
             },
             "grid",
         ),
@@ -443,7 +470,7 @@ def save_best_model(winner, results):
 def main():
     logger.info("╔══════════════════════════════════════════════════════════╗")
     logger.info("║  EquiVision — Pricing Model Comparison Pipeline          ║")
-    logger.info("║  4 Models × RandomizedSearchCV × SelectKBest             ║")
+    logger.info("║  6 Models × RandomizedSearchCV × SelectKBest             ║")
     logger.info("╚══════════════════════════════════════════════════════════╝")
 
     t_total = time.time()
