@@ -1,13 +1,13 @@
 """
 ╔══════════════════════════════════════════════════════════════════════╗
 ║  EquiVision — Pricing Model Comparison Pipeline                     ║
-║  4 Scikit-Learn Models × GridSearchCV × SelectKBest                 ║
+║  4 Scikit-Learn Models × RandomizedSearchCV × SelectKBest           ║
 ║                                                                      ║
 ║  Models:                                                             ║
-║    1. Ridge Regression          (linear baseline)                    ║
-║    2. Random Forest Regressor   (bagging ensemble)                   ║
-║    3. Gradient Boosting Regressor (boosting ensemble)                ║
-║    4. SVR                       (kernel-based)                       ║
+║    1. Ridge Regression              (linear baseline)               ║
+║    2. HistGradientBoosting          (fast boosting, native NaN)      ║
+║    3. Gradient Boosting Regressor   (classic boosting)               ║
+║    4. SVR                           (kernel-based)                   ║
 ║                                                                      ║
 ║  Output: best model saved as pricing_pipeline.joblib                 ║
 ╚══════════════════════════════════════════════════════════════════════╝
@@ -22,8 +22,9 @@ from pathlib import Path
 import joblib
 import numpy as np
 import pandas as pd
+from scipy.stats import randint, uniform
 from sklearn.compose import ColumnTransformer
-from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
+from sklearn.ensemble import GradientBoostingRegressor, HistGradientBoostingRegressor
 from sklearn.feature_selection import SelectKBest, f_regression, mutual_info_regression
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import Ridge
@@ -33,7 +34,7 @@ from sklearn.metrics import (
     mean_squared_error,
     r2_score,
 )
-from sklearn.model_selection import GridSearchCV, cross_val_score, train_test_split
+from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.svm import SVR
@@ -55,6 +56,7 @@ OUTPUT_DIR = Path(__file__).resolve().parent / "weights"
 RANDOM_STATE = 42
 TEST_SIZE = 0.2
 CV_FOLDS = 5
+N_ITER_RANDOM = 30  # RandomizedSearchCV iterations for heavy models
 
 
 def load_and_prepare_data():
@@ -122,8 +124,9 @@ def build_preprocessor(categorical_features, numerical_features):
 
 def get_models_and_params():
     """
-    Define the 4 scikit-learn models with their GridSearchCV parameter grids.
-    Each entry: (name, model, param_grid)
+    Define the 4 scikit-learn models with their search configs.
+    Each entry: (name, model, param_grid/distributions, search_type)
+      - search_type: "grid" for small grids, "random" for large spaces
     """
     models = [
         # ─── 1. Ridge Regression (linear baseline) ───
@@ -133,28 +136,35 @@ def get_models_and_params():
             {
                 "model__alpha": [0.01, 0.1, 1.0, 10.0, 100.0],
             },
+            "grid",
         ),
-        # ─── 2. Random Forest Regressor (bagging) ───
+        # ─── 2. HistGradientBoosting (fast native boosting) ───
+        #   10-50x faster than RandomForest, handles NaN natively
         (
-            "RandomForest",
-            RandomForestRegressor(random_state=RANDOM_STATE, n_jobs=-1),
+            "HistGradientBoosting",
+            HistGradientBoostingRegressor(random_state=RANDOM_STATE),
             {
-                "model__n_estimators": [100, 200, 300],
-                "model__max_depth": [10, 20, None],
-                "model__min_samples_split": [2, 5],
-                "model__min_samples_leaf": [1, 2],
+                "model__max_iter": randint(100, 500),
+                "model__learning_rate": uniform(0.01, 0.19),  # 0.01–0.20
+                "model__max_depth": randint(3, 12),
+                "model__min_samples_leaf": randint(5, 50),
+                "model__l2_regularization": uniform(0.0, 1.0),
+                "model__max_bins": [128, 255],
             },
+            "random",
         ),
-        # ─── 3. Gradient Boosting Regressor (boosting) ───
+        # ─── 3. Gradient Boosting Regressor (classic boosting) ───
         (
             "GradientBoosting",
             GradientBoostingRegressor(random_state=RANDOM_STATE),
             {
-                "model__n_estimators": [100, 200, 300],
-                "model__learning_rate": [0.01, 0.05, 0.1],
-                "model__max_depth": [3, 5, 7],
-                "model__subsample": [0.8, 1.0],
+                "model__n_estimators": randint(100, 400),
+                "model__learning_rate": uniform(0.01, 0.19),
+                "model__max_depth": randint(3, 8),
+                "model__subsample": uniform(0.7, 0.3),  # 0.7–1.0
+                "model__min_samples_leaf": randint(1, 10),
             },
+            "random",
         ),
         # ─── 4. SVR (kernel-based) ───
         (
@@ -165,6 +175,7 @@ def get_models_and_params():
                 "model__epsilon": [0.01, 0.1, 0.5],
                 "model__kernel": ["rbf", "linear"],
             },
+            "grid",
         ),
     ]
     return models
@@ -242,7 +253,7 @@ def train_and_compare(X_train, X_test, y_train, y_test, categorical_features, nu
     # ── Train each model ──
     results = []
 
-    for name, model, param_grid in models:
+    for name, model, param_grid, search_type in models:
         logger.info("\n" + "=" * 60)
         logger.info(f"  MODEL: {name}")
         logger.info("=" * 60)
@@ -254,48 +265,59 @@ def train_and_compare(X_train, X_test, y_train, y_test, categorical_features, nu
             ("model", model),
         ])
 
-        # Prefix param grid keys are already correct (model__)
-        # Add SelectKBest k to the grid too
+        # Add SelectKBest k options
         full_param_grid = param_grid.copy()
-        full_param_grid["feature_selection__k"] = [
+        k_values = list(set([
             min(optimal_k, len(all_feature_names)),
             min(optimal_k + 5, len(all_feature_names)),
-            len(all_feature_names),  # "all" equivalent
-        ]
-        # Remove duplicates from the k list
-        full_param_grid["feature_selection__k"] = list(
-            set(full_param_grid["feature_selection__k"])
-        )
-
-        n_combos = 1
-        for v in full_param_grid.values():
-            n_combos *= len(v)
-        logger.info(f"  Grid: {n_combos} combinations × {CV_FOLDS} folds = {n_combos * CV_FOLDS} fits")
+            len(all_feature_names),
+        ]))
+        full_param_grid["feature_selection__k"] = k_values
 
         t_start = time.time()
 
-        grid_search = GridSearchCV(
-            pipeline,
-            param_grid=full_param_grid,
-            cv=CV_FOLDS,
-            scoring="neg_mean_absolute_error",
-            n_jobs=-1,
-            verbose=0,
-            return_train_score=True,
-        )
-        grid_search.fit(X_train, y_train)
+        if search_type == "random":
+            n_fits = N_ITER_RANDOM * CV_FOLDS
+            logger.info(f"  RandomizedSearchCV: {N_ITER_RANDOM} iters × {CV_FOLDS} folds = {n_fits} fits")
+            searcher = RandomizedSearchCV(
+                pipeline,
+                param_distributions=full_param_grid,
+                n_iter=N_ITER_RANDOM,
+                cv=CV_FOLDS,
+                scoring="neg_mean_absolute_error",
+                n_jobs=-1,
+                verbose=0,
+                random_state=RANDOM_STATE,
+                return_train_score=True,
+            )
+        else:
+            n_combos = 1
+            for v in full_param_grid.values():
+                n_combos *= len(v)
+            logger.info(f"  GridSearchCV: {n_combos} combos × {CV_FOLDS} folds = {n_combos * CV_FOLDS} fits")
+            searcher = GridSearchCV(
+                pipeline,
+                param_grid=full_param_grid,
+                cv=CV_FOLDS,
+                scoring="neg_mean_absolute_error",
+                n_jobs=-1,
+                verbose=0,
+                return_train_score=True,
+            )
+
+        searcher.fit(X_train, y_train)
 
         t_elapsed = time.time() - t_start
 
         # ── Evaluation on test set ──
-        y_pred = grid_search.predict(X_test)
+        y_pred = searcher.predict(X_test)
         mae = mean_absolute_error(y_test, y_pred)
         rmse = np.sqrt(mean_squared_error(y_test, y_pred))
         r2 = r2_score(y_test, y_pred)
         mape = mean_absolute_percentage_error(y_test, y_pred) * 100
 
         # CV score
-        cv_mae = -grid_search.best_score_
+        cv_mae = -searcher.best_score_
 
         result = {
             "name": name,
@@ -304,13 +326,13 @@ def train_and_compare(X_train, X_test, y_train, y_test, categorical_features, nu
             "test_r2": r2,
             "test_mape": mape,
             "cv_mae": cv_mae,
-            "best_params": grid_search.best_params_,
+            "best_params": searcher.best_params_,
             "train_time_s": t_elapsed,
-            "best_pipeline": grid_search.best_estimator_,
+            "best_pipeline": searcher.best_estimator_,
         }
         results.append(result)
 
-        logger.info(f"\n  Best Params: {grid_search.best_params_}")
+        logger.info(f"\n  Best Params: {searcher.best_params_}")
         logger.info(f"  ┌──────────────────────────────────────────┐")
         logger.info(f"  │  CV  MAE:  {cv_mae:>10,.2f} EUR              │")
         logger.info(f"  │  Test MAE: {mae:>10,.2f} EUR              │")
@@ -393,7 +415,7 @@ def save_best_model(winner, results):
         "winner_r2": round(winner["test_r2"], 4),
         "all_models": comparison,
         "feature_selection": "SelectKBest (f_regression)",
-        "hyperparameter_tuning": f"GridSearchCV ({CV_FOLDS}-fold)",
+        "hyperparameter_tuning": f"GridSearchCV + RandomizedSearchCV ({CV_FOLDS}-fold, {N_ITER_RANDOM} iters)",
         "test_size": TEST_SIZE,
         "random_state": RANDOM_STATE,
     }
@@ -421,7 +443,7 @@ def save_best_model(winner, results):
 def main():
     logger.info("╔══════════════════════════════════════════════════════════╗")
     logger.info("║  EquiVision — Pricing Model Comparison Pipeline          ║")
-    logger.info("║  4 Models × GridSearchCV × SelectKBest                   ║")
+    logger.info("║  4 Models × RandomizedSearchCV × SelectKBest             ║")
     logger.info("╚══════════════════════════════════════════════════════════╝")
 
     t_total = time.time()
