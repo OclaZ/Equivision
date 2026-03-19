@@ -1,8 +1,5 @@
-version: "3.8"
-
-# ============================================================================
-#  EquiVision — Full Infrastructure Stack
-#  Services: FastAPI, Next.js, PostgreSQL, Redis,
+# EquiVision — Full Infrastructure Stack
+# Services: FastAPI, Next.js, PostgreSQL, Redis,
 #            Airflow, MLflow, Prometheus, Grafana
 # ============================================================================
 
@@ -18,13 +15,18 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
     AIRFLOW__API__AUTH_BACKENDS: "airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session"
     AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+    # Shared Database Connection for backend scripts
+    DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB}
     # MLflow connection
     MLFLOW_TRACKING_URI: http://mlflow:5000
+    # Additional Python dependencies for running ML scripts directly in Airflow
+    _PIP_ADDITIONAL_REQUIREMENTS: pandas scikit-learn xgboost lightgbm joblib sqlalchemy psycopg2-binary python-jose[cryptography] passlib bcrypt pydantic fastapi requests matplotlib seaborn
   volumes:
     - ./airflow/dags:/opt/airflow/dags
     - ./airflow/logs:/opt/airflow/logs
     - ./airflow/plugins:/opt/airflow/plugins
     - ./backend:/opt/airflow/backend # Access to training scripts
+    - ./ML_DL:/ML_DL # Access to ML models and data
   depends_on:
     database:
       condition: service_healthy
@@ -47,6 +49,7 @@ services:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - ./backend:/app
+      - ./ML_DL:/ML_DL
       - backend-data:/var/lib/data
     environment:
       - POSTGRES_USER=${POSTGRES_USER}

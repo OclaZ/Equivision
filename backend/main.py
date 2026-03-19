@@ -1,16 +1,15 @@
-
+import sys, os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from pydantic import BaseModel
 from contextlib import asynccontextmanager
 from typing import Optional
 import logging
 import os
 
-# Commented out due to Windows numpy DLL issue
-from app.ml.vision.inference import BreedClassifierService
+from ML_DL.DL.MODELS.inference import BreedClassifierService
 try:
-    from app.ml.pricing.inference import PricingService
+    from ML_DL.ML.MODELS.inference import PricingService
 except ImportError:
     PricingService = None # Will crash later if used, but handled by ML_MODE check
 
@@ -32,7 +31,7 @@ async def lifespan(app: FastAPI):
     if ml_mode == "FULL":
         # Try to initialize database (optional)
         try:
-            from app.core.database import init_db
+            from database.database import init_db
             logger.info("Initializing Database...")
             init_db()
             logger.info("Database initialized successfully")
@@ -79,18 +78,19 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="EquiVision API", lifespan=lifespan)
 
-# Request models
-class PriceEstimateRequest(BaseModel):
-    breed: Optional[str] = None
-    gender: Optional[str] = None
-    age: Optional[int] = None
-    height: Optional[int] = None # New feature
+# Import schemas
+from schemas.predictions import PriceEstimateRequest
 
 # Include routers conditionally
 ml_mode = os.getenv("ML_MODE", "FULL")
 if ml_mode == "FULL":
-    from app.api.auth import router as auth_router
+    from routes.auth import router as auth_router
+    from routes.listings import router as listings_router
+    from routes.predictions import router as predictions_router
+    
     app.include_router(auth_router)
+    app.include_router(listings_router)
+    app.include_router(predictions_router)
 
 
 @app.get("/")

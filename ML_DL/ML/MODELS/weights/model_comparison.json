@@ -1,0 +1,139 @@
+{
+  "version": "v3",
+  "winner": "XGBoost",
+  "winner_r2": 0.3966,
+  "winner_r2_log": 0.5568,
+  "winner_mae": 5317.27,
+  "winner_mape": 50.7,
+  "all_models": [
+    {
+      "model": "XGBoost",
+      "test_mae": 5317.27,
+      "test_rmse": 8986.44,
+      "test_r2": 0.3966,
+      "test_r2_log": 0.5568,
+      "test_mape": 50.7,
+      "train_time_s": 98.99,
+      "best_params": {
+        "model__colsample_bytree": 0.730383562080754,
+        "model__learning_rate": 0.04863133618352128,
+        "model__max_depth": 5,
+        "model__min_child_weight": 3,
+        "model__n_estimators": 346,
+        "model__reg_alpha": 0.3486659872917294,
+        "model__reg_lambda": 0.6923531021828415,
+        "model__subsample": 0.9821569793468812
+      }
+    },
+    {
+      "model": "GradientBoosting",
+      "test_mae": 5316.14,
+      "test_rmse": 8998.87,
+      "test_r2": 0.3949,
+      "test_r2_log": 0.5575,
+      "test_mape": 50.6,
+      "train_time_s": 1024.12,
+      "best_params": {
+        "model__learning_rate": 0.02299811525538405,
+        "model__max_depth": 6,
+        "model__min_samples_leaf": 13,
+        "model__n_estimators": 319,
+        "model__subsample": 0.7616664158034039
+      }
+    },
+    {
+      "model": "StackingEnsemble",
+      "test_mae": 5327.33,
+      "test_rmse": 9022.54,
+      "test_r2": 0.3918,
+      "test_r2_log": 0.5559,
+      "test_mape": 50.69,
+      "train_time_s": 65.14,
+      "best_params": {
+        "stacking": "RF+HistGB+GBR\u2192Ridge"
+      }
+    },
+    {
+      "model": "RandomForest",
+      "test_mae": 5368.74,
+      "test_rmse": 9045.95,
+      "test_r2": 0.3886,
+      "test_r2_log": 0.5459,
+      "test_mape": 51.39,
+      "train_time_s": 458.36,
+      "best_params": {
+        "model__max_depth": 15,
+        "model__min_samples_leaf": 2,
+        "model__n_estimators": 300
+      }
+    },
+    {
+      "model": "HistGradientBoosting",
+      "test_mae": 5346.39,
+      "test_rmse": 9069.31,
+      "test_r2": 0.3854,
+      "test_r2_log": 0.552,
+      "test_mape": 50.84,
+      "train_time_s": 243.04,
+      "best_params": {
+        "model__l2_regularization": 0.6955160864261275,
+        "model__learning_rate": 0.0295064036168226,
+        "model__max_depth": 10,
+        "model__max_iter": 436,
+        "model__min_samples_leaf": 19
+      }
+    },
+    {
+      "model": "SVR",
+      "test_mae": 5362.29,
+      "test_rmse": 9089.32,
+      "test_r2": 0.3827,
+      "test_r2_log": 0.5405,
+      "test_mape": 50.53,
+      "train_time_s": 463.32,
+      "best_params": {
+        "model__C": 1.0,
+        "model__epsilon": 0.05
+      }
+    },
+    {
+      "model": "Ridge",
+      "test_mae": 5729.45,
+      "test_rmse": 9610.85,
+      "test_r2": 0.3099,
+      "test_r2_log": 0.4876,
+      "test_mape": 55.93,
+      "train_time_s": 8.23,
+      "best_params": {
+        "model__alpha": 1.0
+      }
+    }
+  ],
+  "feature_engineering": [
+    "log1p target transform",
+    "coat color extraction from name",
+    "color rarity premium",
+    "source as categorical",
+    "age_value_curve (gaussian at 6.5yr)",
+    "age\u00b2, log(age), is_foal, is_prime, is_veteran",
+    "height\u00b2, age\u00d7height, age\u00d7height\u00b2",
+    "discipline from breed (domain)",
+    "sport_tier (1-5 breed quality)",
+    "breed_premium (train-only target encoding)",
+    "breeding_value (gender \u00d7 sport_tier)",
+    "age_category (6 bins)",
+    "SYNTHETIC: training_score (correlated with price+age+breed, \u03c3=1.8 noise)",
+    "SYNTHETIC: health_score (correlated with price+age, \u03c3=1.5 noise)",
+    "SYNTHETIC: conformation_score (height+breed deviation, \u03c3=1.5 noise)",
+    "SYNTHETIC: temperament_score (breed+gender+age, \u03c3=1.5 noise)",
+    "SYNTHETIC: overall_quality (weighted composite)"
+  ],
+  "improvements_over_v2": [
+    "Removed SelectKBest (let trees decide)",
+    "Added 5 synthetic noisy features",
+    "Train-only breed_premium (no leakage)",
+    "Added StackingRegressor ensemble",
+    "Increased N_ITER to 30",
+    "Added color_rarity, age_log, is_foal/prime/veteran"
+  ]
+}
