@@ -203,6 +203,7 @@ class BreedClassifierService:
                         "error": "No horse detected in the image.",
                         "breed": "Unknown",
                         "confidence": 0.0,
+                        "horse_not_detected": True,
                         "detection": {"object_detected": None}
                     }
 
@@ -236,6 +237,7 @@ class BreedClassifierService:
                 "breed": predicted_class,
                 "confidence": float(f"{confidence_score:.4f}"),
                 "detection": detection_info,
+                "horse_not_detected": False, # If we reach here, a horse was detected by YOLO or we are in fallback mode
                 "all_probabilities": {
                     cls: float(f"{prob:.4f}") 
                     for cls, prob in zip(self.class_names, all_probs)

@@ -38,6 +38,11 @@ class Prediction(Base):
     input_breed = Column(String, nullable=True)
     input_gender = Column(String, nullable=True)
     input_age = Column(Integer, nullable=True)
+    input_height = Column(Float, nullable=True)
+    
+    # Analysis outputs
+    warning = Column(String, nullable=True)
+    detection_info = Column(String, nullable=True) # JSON store for bounding boxes, etc.
     
     # Metadata
     image_url = Column(String, nullable=True)

@@ -6,7 +6,7 @@ class PriceEstimateRequest(BaseModel):
     breed: Optional[str] = None
     gender: Optional[str] = None
     age: Optional[int] = None
-    height: Optional[int] = None # New feature
+    height: Optional[float] = None # New feature
 
 class PredictionCreate(BaseModel):
     predicted_breed: Optional[str] = None
@@ -17,7 +17,10 @@ class PredictionCreate(BaseModel):
     input_breed: Optional[str] = None
     input_gender: Optional[str] = None
     input_age: Optional[int] = None
+    input_height: Optional[float] = None
     image_url: Optional[str] = None
+    warning: Optional[str] = None
+    detection_info: Optional[str] = None
 
 class PredictionResponse(PredictionCreate):
     id: int

@@ -1,26 +1,225 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
+@custom-variant dark (&:is(.dark *));
+
+/* ═══════════════════════════════════════════════════════
+   Custom Design Tokens
+   ═══════════════════════════════════════════════════════ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --font-heading: var(--font-heading);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-bg: rgba(255, 255, 255, 0.03);
+
+  /* Premium UI Overhaul Tokens */
+  --btn-primary: #10b981;
+  --btn-primary-hover: #059669;
+  --btn-primary-active: #047857;
+  --btn-secondary: rgba(255, 255, 255, 0.1);
+  --btn-danger: #ef4444;
+  
+  --input-bg: rgba(255, 255, 255, 0.05);
+  --input-border: rgba(255, 255, 255, 0.1);
+  --input-border-focus: #10b981;
+  
+  --card-bg: rgba(255, 255, 255, 0.03);
+  --card-border: rgba(255, 255, 255, 0.1);
+  
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+  --shadow-emerald: 0 0 20px rgba(16, 185, 129, 0.3);
+
+  /* Foundation Colors */
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --radius: 0.625rem;
+
+  /* 21st.dev Auth Component Variables */
+  --color-bg: #101214;
+  --color-surface: #161A1D;
+  --color-muted-surface: #1D2125;
+  --color-border: #2C333A;
+  --color-text-secondary: #596773;
+  --color-text-primary: #C7D1DB;
+  --color-heading: #DEE4EA;
+  --spacing-6: 1.5rem;
+  --rounded-lg: 0.5rem;
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1);
+  --color-text-primary-rgb: 199, 209, 219;
+  --color-bg-2: #C7D1DB;
 }
 
+/* ═══════════════════════════════════════════════════════
+   Tailwind v4 Theme Tokens
+   ═══════════════════════════════════════════════════════ */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: #000000;
+  --color-foreground: #ffffff;
+  --color-primary: #ffffff;
+  --color-secondary: #27272a;
+  --color-muted: #888888;
+  --color-accent: rgba(255, 255, 255, 0.1);
+  --color-border: rgba(255, 255, 255, 0.15);
+  --color-input: rgba(255, 255, 255, 0.15);
+  --color-ring: #d4d4d8;
+  --radius-md: 0.5rem;
+  --font-sans: var(--font-sans);
+  --font-heading: var(--font-heading);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ═══════════════════════════════════════════════════════
+   Global Resets
+   ═══════════════════════════════════════════════════════ */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: #000000;
+  color: #ffffff;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  overflow-x: hidden;
 }
+
+/* ═══════════════════════════════════════════════════════
+   Glass Morphism System
+   ═══════════════════════════════════════════════════════ */
+.glass {
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.glass-hover:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.glass-strong {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(24px) saturate(1.6);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.glass-dark {
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* ═══════════════════════════════════════════════════════
+   Premium Component Classes
+   ═══════════════════════════════════════════════════════ */
+@layer components {
+  .btn-primary {
+    @apply px-8 py-4 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-bold text-lg rounded-xl shadow-lg shadow-emerald-500/50 hover:shadow-2xl hover:shadow-emerald-500/70 transition-all duration-300 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply px-8 py-4 bg-white/5 border-2 border-emerald-500 text-emerald-400 font-bold text-lg rounded-xl hover:bg-emerald-500/10 hover:border-emerald-400 hover:text-emerald-300 transition-all duration-300 active:scale-95;
+  }
+
+  .btn-ghost {
+    @apply px-6 py-3 bg-transparent text-white/70 font-semibold rounded-lg hover:bg-white/5 hover:text-white transition-all duration-300 active:scale-95;
+  }
+
+  .btn-danger {
+    @apply px-8 py-4 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-400 hover:to-red-500 text-white font-bold text-lg rounded-xl shadow-lg shadow-red-500/50 hover:shadow-2xl hover:shadow-red-500/70 transition-all duration-300 active:scale-95;
+  }
+
+  .input-premium {
+    @apply w-full px-6 py-4 bg-white/5 border-2 border-white/10 text-white placeholder:text-white/40 rounded-xl focus:border-emerald-500 focus:shadow-lg focus:shadow-emerald-500/30 focus:outline-none transition-all duration-300 text-lg font-medium;
+  }
+
+  .card-premium {
+    @apply bg-white/3 backdrop-blur-md border border-white/10 rounded-2xl p-8 shadow-xl hover:shadow-2xl hover:border-white/20 transition-all duration-300;
+  }
+
+  .stat-card-premium {
+    @apply bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 border-2 border-emerald-500/30 rounded-2xl p-8 hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/20 transition-all duration-300;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   Dark Mode & Base Resets
+   ═══════════════════════════════════════════════════════ */
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   Utilities
+   ═══════════════════════════════════════════════════════ */
+@keyframes marquee-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+.animate-marquee {
+  animation: marquee-scroll 25s linear infinite;
+}
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #000; }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.3); }
+
+::selection { background: rgba(255, 255, 255, 0.15); color: #fff; }

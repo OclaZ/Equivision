@@ -50,6 +50,7 @@ services:
     volumes:
       - ./backend:/app
       - ./ML_DL:/ML_DL
+      - ./backend/static/uploads:/app/static/uploads
       - backend-data:/var/lib/data
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
@@ -77,6 +78,11 @@ services:
       - "${FRONTEND_PORT:-3000}:3000"
     environment:
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    command: npm run dev
     depends_on:
       - backend
     networks:

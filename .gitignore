@@ -1,44 +1,96 @@
+# Environment & External
+venv/
+backend/venv/
+node_modules/
+.venv/
+.env*
+!.env.example
+
+# Folders to Ignore
 inspirations/
 plan/
-venv/
-node_modules/
-ANTIGRAVITY_WORKFLOW.md
-.env
-.env.local
-__pycache__/
-*.log
-.DS_Store
+backend/static/
+**/__pycache__/
+
+# Architecture docs (internal only)
+ARCHITECTURE.md
+
+# MLOps & Weights
 *.pth
 *.pt
 *.onnx
+*.joblib
+**/weights/
+**/models/weights/
 backend/app/ml/vision/weights/
+backend/app/ml/pricing/weights/
+ML_DL/ML/MODELS/weights/
+ML_DL/DL/MODELS/weights/
+
+# Data & Datasets
+**/data/
+!**/data/.gitkeep
+backend/data/
+ML_DL/data/
+**/raw/
+**/processed/
+**/clean/
+**/bronze/
+**/silver/
+**/gold/
+**/archived/
+*.csv
+*.json
+*.html
+!package.json
+!tsconfig.json
+!next.config.js
+!next.config.ts
+!components.json
+!backend/data/raw/horse-breeds/labels.json
+
+# Temporary & Debug
+*.log
+*.tmp
+*.pyc
+.DS_Store
 .pytest_cache/
 .vscode/
-*.pyc
-*.pyo
-*.pyd
-*.html
-*.csv
-!backend/data/raw/horse-breeds/labels.json
-!backend/data/samples/*.csv
-backend/data/archived/
-backend/data/gold/
-backend/data/silver/
-backend/data/bronze/
-backend/data/clean/
-backend/data/processed/
-backend/data/raw/horse-breeds-scraped/
-backend/app/ml/vision/weights_tf_scraped/
-backend/app/ml/pricing/weights/
-*.joblib
+.idea/
+**/git_diff*.txt
+backend/check_*.py
+
+# Web / Frontend
+.next/
+out/
+build/
+dist/
+
+# Antigravity / Workspace
 .agent/
+.gemini/
+ANTIGRAVITY_WORKFLOW.md
+PLAN.md
+TASK.md
+IMPLEMENTATION_PLAN.md
+WALKTHROUGH.md
+FINAL_STATUS.md
+INTEGRATION_SUMMARY.md
+history_log.md
+exploration_summary.md
+vision_training_summary.md
+technical_overview.md
+pricing_modeling_summary.md
+model_analysis.md
+model_benchmarks_corrected.md
+performance_summary.md
+results_analysis.md
+qa.md
+detailed_qa.md
+final_project_qa.md
 
-# Architecture doc (internal only)
-ARCHITECTURE.md
-
-# Airflow logs (generated at runtime)
+# Airflow
 airflow/logs/
-!airflow/logs/.gitkeep
+airflow/dags/__pycache__/
 
-# Monitoring data (generated at runtime)
-monitoring/grafana/data/
+

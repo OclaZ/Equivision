@@ -1,11 +1,16 @@
 import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from typing import Optional
 import logging
 import os
+import uuid
+import shutil
+import json
+from pathlib import Path
 
 from ML_DL.DL.MODELS.inference import BreedClassifierService
 try:
@@ -78,6 +83,26 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="EquiVision API", lifespan=lifespan)
 
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Static Files for Uploads
+UPLOAD_DIR = Path("static/uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+from database.database import get_db
+from core.auth import get_current_active_user
+from models.database import User, Prediction
+from sqlalchemy.orm import Session
+
 # Import schemas
 from schemas.predictions import PriceEstimateRequest
 
@@ -100,6 +125,20 @@ def read_root():
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+@app.get("/metadata")
+def get_metadata():
+    """Return lists of supported breeds and genders"""
+    breeds = []
+    if breed_service and hasattr(breed_service, 'class_names'):
+        # Capitalize and clean up names
+        breeds = [b.replace('_', ' ').title() for b in breed_service.class_names]
+    
+    return {
+        "breeds": breeds or ["Arabe", "Barbe", "Thoroughbred", "Quarter Horse"],
+        "genders": ["Femelle (Mare)", "Mâle (Stallion)", "Hongre (Gelding)"],
+        "price_ranges": ["0 - 5,000€", "5,000 - 20,000€", "20,000 - 50,000€", "50,000€+"]
+    }
 
 @app.post("/predict/breed")
 async def predict_breed(file: UploadFile = File(...)):
@@ -156,9 +195,18 @@ async def predict_price(request: PriceEstimateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/predict/complete")
-async def predict_complete(file: UploadFile = File(...), gender: Optional[str] = None, age: Optional[int] = None, height: Optional[int] = None):
+async def predict_complete(
+    file: UploadFile = File(...), 
+    gender: Optional[str] = Form(None), 
+    age: Optional[int] = Form(None), 
+    height: Optional[float] = Form(None),
+    input_breed: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
     """
     Combined endpoint: Upload horse image and get both breed classification and price estimate.
+    Saves the result to the database for the current user.
     """
     if not breed_service or not pricing_service:
         raise HTTPException(status_code=503, detail="ML Services not available")
@@ -170,22 +218,96 @@ async def predict_complete(file: UploadFile = File(...), gender: Optional[str] =
     try:
         # Step 1: Predict breed from image
         breed_result = breed_service.predict(file.file)
-        detected_breed = breed_result.get('breed', 'unknown')
+        logger.info(f"Breed Predictor Result: {breed_result}")
         
-        # Step 2: Estimate price using detected breed
+        # Robust Horse Detection Validation
+        horse_not_detected = breed_result.get('horse_not_detected', False)
+        
+        # Additional checks if YOLO is unavailable or returned weird results
+        if "error" in breed_result and "No horse detected" in breed_result["error"]:
+             horse_not_detected = True
+             
+        detected_breed = breed_result.get('breed', 'unidentified')
+        confidence = breed_result.get('confidence', 0)
+        
+        if detected_breed.lower() in ["unknown", "unidentified", "non identifié"]:
+             horse_not_detected = True
+             
+        if horse_not_detected:
+             detected_breed = "Non identifié"
+             confidence = 0.0
+        
+        # Step 2: Estimate price
+        # If no horse detected, user input breed takes precedence, or default
+        effective_breed = input_breed if input_breed else detected_breed
+        
         price_result = pricing_service.predict(
-            breed=detected_breed.lower(),
+            breed=effective_breed.lower(),
             gender=gender,
-            age=age,
+            age=int(age) if age is not None else None,
             height=height
         )
         
-        # Step 3: Combine results
+        prediction_id = None
+        created_at = None
+        
+        # Step 4: Save to Database ONLY IF HORSE DETECTED
+        if not horse_not_detected:
+            # Step 3: Save Image for Persistence
+            file.file.seek(0)
+            file_extension = Path(file.filename).suffix or ".jpg"
+            unique_filename = f"{uuid.uuid4()}{file_extension}"
+            file_path = UPLOAD_DIR / unique_filename
+            
+            try:
+                with open(file_path, "wb") as buffer:
+                    shutil.copyfileobj(file.file, buffer)
+                image_url = f"/static/uploads/{unique_filename}"
+            except Exception as e:
+                logger.error(f"Failed to save image: {e}")
+                image_url = None
+
+            db_prediction = Prediction(
+                user_id=current_user.id,
+                predicted_breed=detected_breed,
+                breed_confidence=float(confidence),
+                estimated_price=float(price_result.get('estimated_price', 0)),
+                price_min=float(price_result.get('confidence_interval', {}).get('min', 0)),
+                price_max=float(price_result.get('confidence_interval', {}).get('max', 0)),
+                input_breed=effective_breed,
+                input_gender=gender,
+                input_age=age,
+                input_height=height,
+                image_url=image_url,
+                warning=None,
+                detection_info=json.dumps(breed_result.get('detection', {}))
+            )
+            db.add(db_prediction)
+            db.commit()
+            db.refresh(db_prediction)
+            prediction_id = db_prediction.id
+            created_at = db_prediction.created_at.isoformat() if db_prediction.created_at else None
+        else:
+            image_url = None # Don't save image if not a horse
+
+        # Step 5: Return result (matching frontend interface)
         return {
-            "breed_classification": breed_result,
-            "price_estimation": price_result,
-            "combined_confidence": breed_result.get('confidence', 0) * 0.7  # Weighted confidence
+            "id": prediction_id,
+            "predicted_breed": "Pas un cheval" if horse_not_detected else detected_breed,
+            "breed_confidence": 0.0 if horse_not_detected else confidence,
+            "estimated_price": 0.0 if horse_not_detected else float(price_result.get('estimated_price', 0)),
+            "price_min": 0.0 if horse_not_detected else float(price_result.get('confidence_interval', {}).get('min', 0)),
+            "price_max": 0.0 if horse_not_detected else float(price_result.get('confidence_interval', {}).get('max', 0)),
+            "age": age,
+            "gender": gender,
+            "height": height,
+            "image_url": image_url,
+            "created_at": created_at,
+            "warning": "NOT_A_HORSE" if horse_not_detected else None,
+            "detection": breed_result.get("detection")
         }
     except Exception as e:
         logger.error(f"Combined prediction error: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
