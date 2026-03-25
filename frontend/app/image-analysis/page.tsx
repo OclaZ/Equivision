@@ -14,7 +14,6 @@ import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { apiFetch } from "@/lib/api";
 import { getNavLinks } from "@/lib/constants";
-import { cn } from "@/lib/utils";
 import Image from "next/image";
 
 interface ImageAnalysisResult {
@@ -241,18 +240,7 @@ export default function ImageAnalysisPage() {
                            {previewUrl && <Image src={previewUrl} alt="Analyzed specimen" fill className={`object-cover ${hasHorseError ? 'grayscale contrast-125' : ''}`} unoptimized={true} />}
                            <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/20 to-transparent" />
                            
-                           {/* BBox visualization */}
-                           {result?.detection?.bbox && !hasHorseError && (
-                             <div 
-                               className="absolute border-2 border-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.5)] z-20"
-                               style={{
-                                 left: `${(result.detection.bbox[0] / 1000) * 100}%`,
-                                 top: `${(result.detection.bbox[1] / 1000) * 100}%`,
-                                 width: `${((result.detection.bbox[2] - result.detection.bbox[0]) / 1000) * 100}%`,
-                                 height: `${((result.detection.bbox[3] - result.detection.bbox[1]) / 1000) * 100}%`,
-                               }}
-                             />
-                           )}
+                           {/* BBox visualization removed as per user request */}
 
                            {hasHorseError && (
                             <div className="absolute inset-0 flex items-center justify-center bg-red-900/40 backdrop-blur-sm z-30">
